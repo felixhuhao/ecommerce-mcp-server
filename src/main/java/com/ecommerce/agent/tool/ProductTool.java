@@ -6,7 +6,7 @@ import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
-import com.ecommerce.agent.domain.Product;
+import com.ecommerce.agent.dto.ProductResult;
 import com.ecommerce.agent.service.ProductService;
 
 @Component
@@ -19,15 +19,21 @@ public class ProductTool {
     }
 
     @McpTool(name = "product_list", description = "List active products with an optional limit.")
-    public List<Product> productList(
+    public List<ProductResult> productList(
             @McpToolParam(required = false, description = "Maximum number of products to return.") Integer limit) {
-        return productService.findActiveProducts(limit);
+        return productService.findActiveProducts(limit)
+                .stream()
+                .map(ProductResult::from)
+                .toList();
     }
 
     @McpTool(name = "product_search", description = "Search active products by product name or category.")
-    public List<Product> productSearch(
+    public List<ProductResult> productSearch(
             @McpToolParam(description = "Product name or category keyword.") String keyword,
             @McpToolParam(required = false, description = "Maximum number of products to return.") Integer limit) {
-        return productService.searchActiveProducts(keyword, limit);
+        return productService.searchActiveProducts(keyword, limit)
+                .stream()
+                .map(ProductResult::from)
+                .toList();
     }
 }
