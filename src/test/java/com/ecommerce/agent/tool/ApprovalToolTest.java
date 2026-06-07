@@ -68,6 +68,18 @@ class ApprovalToolTest {
                 .hasMessage("unsupported approval toolName: order_delete");
     }
 
+    @Test
+    void requestApprovalRejectsWrongPurchaseOrderOperationType() {
+        assertThatThrownBy(() -> approvalTool.requestApproval(
+                "purchase_order_create",
+                "update",
+                Map.of("supplierId", 1),
+                1L,
+                "test-session"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("purchase_order_create operationType must be create");
+    }
+
     private JsonNode json(String value) throws JacksonException {
         return objectMapper.readTree(value);
     }
