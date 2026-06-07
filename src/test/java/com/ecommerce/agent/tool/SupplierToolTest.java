@@ -27,8 +27,8 @@ class SupplierToolTest {
     }
 
     @Test
-    void supplierSearchReturnsMatchingSupplierResults() {
-        List<SupplierResult> suppliers = supplierTool.supplierSearch("深圳", 10);
+    void supplierQueryReturnsMatchingSupplierResults() {
+        List<SupplierResult> suppliers = supplierTool.supplierQuery("深圳", 10);
 
         assertThat(suppliers).isNotEmpty();
         assertThat(suppliers)

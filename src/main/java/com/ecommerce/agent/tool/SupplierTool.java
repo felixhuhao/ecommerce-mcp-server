@@ -27,9 +27,9 @@ public class SupplierTool {
                 .toList();
     }
 
-    @McpTool(name = "supplier_search", description = "Search suppliers by supplier name or contact person.")
-    public List<SupplierResult> supplierSearch(
-            @McpToolParam(description = "Supplier name or contact person keyword.") String keyword,
+    @McpTool(name = "supplier_query", description = "Query suppliers by supplier name or contact person.")
+    public List<SupplierResult> supplierQuery(
+            @McpToolParam(required = false, description = "Supplier name or contact person keyword.") String keyword,
             @McpToolParam(required = false, description = "Maximum number of suppliers to return.") Integer limit) {
         return supplierService.searchSuppliers(keyword, limit)
                 .stream()

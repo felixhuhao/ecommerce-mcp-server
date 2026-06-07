@@ -18,10 +18,11 @@ public class ProductTool {
         this.productService = productService;
     }
 
-    @McpTool(name = "product_list", description = "List active products with an optional limit.")
-    public List<ProductResult> productList(
+    @McpTool(name = "product_query", description = "Query active products with an optional keyword.")
+    public List<ProductResult> productQuery(
+            @McpToolParam(required = false, description = "Product name or category keyword.") String keyword,
             @McpToolParam(required = false, description = "Maximum number of products to return.") Integer limit) {
-        return productService.findActiveProducts(limit)
+        return productService.searchActiveProducts(keyword, limit)
                 .stream()
                 .map(ProductResult::from)
                 .toList();

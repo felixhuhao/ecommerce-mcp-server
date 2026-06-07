@@ -23,6 +23,13 @@ public class InventoryService {
         return inventoryMapper.findLowStockItems(normalizeLimit(limit));
     }
 
+    public List<Inventory> queryInventory(Long productId, String warehouse, Integer limit) {
+        return inventoryMapper.queryInventory(
+                productId,
+                warehouse == null ? null : warehouse.trim(),
+                normalizeLimit(limit));
+    }
+
     private int normalizeLimit(Integer limit) {
         if (limit == null || limit <= 0) {
             return DEFAULT_LIMIT;
