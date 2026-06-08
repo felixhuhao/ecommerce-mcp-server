@@ -95,6 +95,16 @@ public interface ApprovalRecordMapper {
 
     @Update("""
             UPDATE approval_record
+            SET status = 'expired'
+            WHERE approval_id = #{approvalId}
+            AND status IN ('pending', 'approved')
+            AND expires_at <= NOW()
+            AND consumed_at IS NULL
+            """)
+    int expireOpenById(@Param("approvalId") String approvalId);
+
+    @Update("""
+            UPDATE approval_record
             SET status = 'consumed',
                 consumed_at = NOW()
             WHERE approval_id = #{approvalId}

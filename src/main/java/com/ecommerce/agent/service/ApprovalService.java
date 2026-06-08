@@ -87,16 +87,19 @@ public class ApprovalService {
             return Optional.empty();
         }
 
+        expireOpenApproval(approvalId);
         return Optional.ofNullable(approvalRecordMapper.findById(approvalId));
     }
 
     public boolean approve(String approvalId, Long userId, String sessionId) {
         validateTransitionRequest(approvalId, userId, sessionId);
+        expireOpenApproval(approvalId);
         return approvalRecordMapper.approvePending(approvalId, userId, sessionId) == 1;
     }
 
     public ApprovalRejectionResult reject(String approvalId, Long userId, String sessionId, String rejectionReason) {
         validateTransitionRequest(approvalId, userId, sessionId);
+        expireOpenApproval(approvalId);
         String normalizedRejectionReason = normalizeOptionalText(rejectionReason);
         boolean changed = approvalRecordMapper.rejectPending(
                 approvalId,
@@ -116,8 +119,13 @@ public class ApprovalService {
         requireText(toolName, "toolName");
         requireText(operationPayload, "operationPayload");
 
+        expireOpenApproval(approvalId);
         String operationHash = sha256(canonicalizeJson(operationPayload));
         return approvalRecordMapper.consumeApproved(approvalId, operationHash, toolName, userId, sessionId) == 1;
+    }
+
+    private void expireOpenApproval(String approvalId) {
+        approvalRecordMapper.expireOpenById(approvalId);
     }
 
     private void validateCreateRequest(

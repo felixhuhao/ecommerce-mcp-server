@@ -284,8 +284,9 @@ always hashes identically on both the `request_approval` and the write call. Inc
 domain-relevant preconditions in the payload; do not include volatile display-only fields such as
 localized labels or formatting. SHA-256 is fine.
 
-Still genuinely open (implementer's call):
-- Expiry duration, and whether expired rows are swept by a job or just rejected lazily on read.
+**Expiry policy:** approvals default to a 15-minute TTL. Expired `pending` / `approved` rows are
+rejected and lazily marked `expired` when read, approved/rejected, or consumed. A sweep job is not
+required for the MVP because the enforcement path is fail-closed.
 
 ### 4.4 Approval Transition Endpoint (non-agent)
 

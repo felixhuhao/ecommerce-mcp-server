@@ -19,6 +19,8 @@ import tools.jackson.databind.ObjectMapper;
 @Transactional
 class ApprovalRecordMapperTest {
 
+    private static final LocalDateTime EXPIRED_AT = LocalDateTime.of(2000, 1, 1, 0, 0);
+
     @Autowired
     private ApprovalRecordMapper approvalRecordMapper;
 
@@ -109,6 +111,38 @@ class ApprovalRecordMapperTest {
         assertThat(found.getStatus()).isEqualTo("rejected");
         assertThat(found.getRejectionReason()).isEqualTo("Duplicate request");
         assertThat(found.getRejectedAt()).isNotNull();
+    }
+
+    @Test
+    void expireOpenByIdMarksPendingAndApprovedExpiredApprovals() {
+        ApprovalRecord pendingApproval = newApprovalRecord();
+        pendingApproval.setExpiresAt(EXPIRED_AT);
+        approvalRecordMapper.insert(pendingApproval);
+
+        ApprovalRecord approvedApproval = newApprovalRecord();
+        approvedApproval.setStatus("approved");
+        approvedApproval.setExpiresAt(EXPIRED_AT);
+        approvalRecordMapper.insert(approvedApproval);
+
+        ApprovalRecord consumedApproval = newApprovalRecord();
+        consumedApproval.setStatus("consumed");
+        consumedApproval.setExpiresAt(EXPIRED_AT);
+        consumedApproval.setConsumedAt(LocalDateTime.now());
+        approvalRecordMapper.insert(consumedApproval);
+
+        int expiredPendingRows = approvalRecordMapper.expireOpenById(pendingApproval.getApprovalId());
+        int expiredApprovedRows = approvalRecordMapper.expireOpenById(approvedApproval.getApprovalId());
+        int expiredConsumedRows = approvalRecordMapper.expireOpenById(consumedApproval.getApprovalId());
+
+        assertThat(expiredPendingRows).isEqualTo(1);
+        assertThat(expiredApprovedRows).isEqualTo(1);
+        assertThat(expiredConsumedRows).isZero();
+        assertThat(approvalRecordMapper.findById(pendingApproval.getApprovalId()).getStatus())
+                .isEqualTo("expired");
+        assertThat(approvalRecordMapper.findById(approvedApproval.getApprovalId()).getStatus())
+                .isEqualTo("expired");
+        assertThat(approvalRecordMapper.findById(consumedApproval.getApprovalId()).getStatus())
+                .isEqualTo("consumed");
     }
 
     private ApprovalRecord newApprovalRecord() {
