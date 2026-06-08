@@ -9,11 +9,17 @@ import org.springframework.stereotype.Component;
 
 import com.ecommerce.agent.domain.PurchaseOrder;
 import com.ecommerce.agent.domain.PurchaseOrderItem;
+import com.ecommerce.agent.domain.CustomerOrder;
+import com.ecommerce.agent.domain.OrderItem;
 import com.ecommerce.agent.dto.ApprovalRequest;
+import com.ecommerce.agent.dto.OrderUpdateRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateItemRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateRequest;
 import com.ecommerce.agent.dto.PurchaseOrderReceiveRequest;
+import com.ecommerce.agent.mapper.CustomerOrderMapper;
+import com.ecommerce.agent.mapper.OrderItemMapper;
 import com.ecommerce.agent.mapper.PurchaseOrderMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -23,19 +29,30 @@ public class ApprovalPayloadBuilder {
 
     public static final String PURCHASE_ORDER_CREATE_TOOL = "purchase_order_create";
     public static final String PURCHASE_ORDER_RECEIVE_TOOL = "purchase_order_receive";
+    public static final String ORDER_UPDATE_TOOL = "order_update";
     public static final String CREATE_OPERATION = "create";
     public static final String RECEIVE_OPERATION = "receive";
+    public static final String UPDATE_OPERATION = "update";
 
     private static final Set<String> SUPPORTED_WRITE_TOOLS = Set.of(
             PURCHASE_ORDER_CREATE_TOOL,
-            PURCHASE_ORDER_RECEIVE_TOOL);
+            PURCHASE_ORDER_RECEIVE_TOOL,
+            ORDER_UPDATE_TOOL);
 
     private final ObjectMapper objectMapper;
     private final PurchaseOrderMapper purchaseOrderMapper;
+    private final CustomerOrderMapper customerOrderMapper;
+    private final OrderItemMapper orderItemMapper;
 
-    public ApprovalPayloadBuilder(ObjectMapper objectMapper, PurchaseOrderMapper purchaseOrderMapper) {
+    public ApprovalPayloadBuilder(
+            ObjectMapper objectMapper,
+            PurchaseOrderMapper purchaseOrderMapper,
+            CustomerOrderMapper customerOrderMapper,
+            OrderItemMapper orderItemMapper) {
         this.objectMapper = objectMapper;
         this.purchaseOrderMapper = purchaseOrderMapper;
+        this.customerOrderMapper = customerOrderMapper;
+        this.orderItemMapper = orderItemMapper;
     }
 
     public void validateSupportedRequest(ApprovalRequest request) {
@@ -49,6 +66,10 @@ public class ApprovalPayloadBuilder {
         if (PURCHASE_ORDER_RECEIVE_TOOL.equals(request.toolName())
                 && !RECEIVE_OPERATION.equals(request.operationType())) {
             throw new IllegalArgumentException("purchase_order_receive operationType must be receive");
+        }
+        if (ORDER_UPDATE_TOOL.equals(request.toolName())
+                && !UPDATE_OPERATION.equals(request.operationType())) {
+            throw new IllegalArgumentException("order_update operationType must be update");
         }
         if (request.operationParams() == null || request.operationParams().isEmpty()) {
             throw new IllegalArgumentException("operationParams must not be empty");
@@ -81,9 +102,21 @@ public class ApprovalPayloadBuilder {
                 request.sessionId());
     }
 
+    public ApprovalRequest orderUpdateApprovalRequest(OrderUpdateRequest request) {
+        return new ApprovalRequest(
+                ORDER_UPDATE_TOOL,
+                UPDATE_OPERATION,
+                orderUpdateParams(request.orderId(), normalizeStatus(request.newStatus())),
+                request.userId(),
+                request.sessionId());
+    }
+
     private Map<String, Object> operationPayload(ApprovalRequest request) {
         if (PURCHASE_ORDER_RECEIVE_TOOL.equals(request.toolName())) {
             return purchaseOrderReceivePayload(request);
+        }
+        if (ORDER_UPDATE_TOOL.equals(request.toolName())) {
+            return orderUpdatePayload(request);
         }
 
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -96,6 +129,9 @@ public class ApprovalPayloadBuilder {
     private Map<String, Object> operationDetail(ApprovalRequest request) {
         if (PURCHASE_ORDER_RECEIVE_TOOL.equals(request.toolName())) {
             return purchaseOrderReceiveDetail(request);
+        }
+        if (ORDER_UPDATE_TOOL.equals(request.toolName())) {
+            return orderUpdateDetail(request);
         }
 
         Map<String, Object> detail = new LinkedHashMap<>();
@@ -130,6 +166,30 @@ public class ApprovalPayloadBuilder {
         return detail;
     }
 
+    private Map<String, Object> orderUpdatePayload(ApprovalRequest request) {
+        Long orderId = requireLongParam(request.operationParams(), "orderId");
+        String newStatus = requireTextParam(request.operationParams(), "newStatus");
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("toolName", request.toolName());
+        payload.put("operationType", request.operationType());
+        payload.put("operationParams", orderUpdateParams(orderId, newStatus));
+        payload.put("currentState", orderCurrentState(orderId, newStatus));
+        return payload;
+    }
+
+    private Map<String, Object> orderUpdateDetail(ApprovalRequest request) {
+        Long orderId = requireLongParam(request.operationParams(), "orderId");
+        String newStatus = requireTextParam(request.operationParams(), "newStatus");
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("title", titleFor(request.toolName()));
+        detail.put("toolName", request.toolName());
+        detail.put("operationType", request.operationType());
+        detail.put("operationParams", orderUpdateParams(orderId, newStatus));
+        detail.put("currentState", orderCurrentState(orderId, newStatus));
+        detail.put("change", orderUpdateChange(orderId, newStatus));
+        return detail;
+    }
+
     private Map<String, Object> purchaseOrderCreateParams(PurchaseOrderCreateRequest request) {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("supplierId", request.supplierId());
@@ -142,6 +202,13 @@ public class ApprovalPayloadBuilder {
     private Map<String, Object> purchaseOrderReceiveParams(Long poId) {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("poId", poId);
+        return params;
+    }
+
+    private Map<String, Object> orderUpdateParams(Long orderId, String newStatus) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("orderId", orderId);
+        params.put("newStatus", newStatus);
         return params;
     }
 
@@ -183,6 +250,37 @@ public class ApprovalPayloadBuilder {
         return impact;
     }
 
+    private Map<String, Object> orderCurrentState(Long orderId, String newStatus) {
+        CustomerOrder order = requireUpdatableOrder(orderId, newStatus);
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("orderId", order.getOrderId());
+        state.put("userId", order.getUserId());
+        state.put("status", order.getStatus());
+        state.put("totalAmount", order.getTotalAmount());
+        state.put("items", orderItems(orderId).stream()
+                .map(this::orderItemState)
+                .toList());
+        return state;
+    }
+
+    private Map<String, Object> orderItemState(OrderItem item) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("itemId", item.getItemId());
+        state.put("productId", item.getProductId());
+        state.put("quantity", item.getQuantity());
+        state.put("unitPrice", item.getUnitPrice());
+        state.put("subtotal", item.getSubtotal());
+        return state;
+    }
+
+    private Map<String, Object> orderUpdateChange(Long orderId, String newStatus) {
+        CustomerOrder order = requireUpdatableOrder(orderId, newStatus);
+        Map<String, Object> change = new LinkedHashMap<>();
+        change.put("fromStatus", order.getStatus());
+        change.put("toStatus", newStatus);
+        return change;
+    }
+
     private PurchaseOrder requireReceivablePurchaseOrder(Long poId) {
         if (poId == null || poId <= 0) {
             throw new IllegalArgumentException("poId must be positive");
@@ -207,6 +305,40 @@ public class ApprovalPayloadBuilder {
         return items;
     }
 
+    private CustomerOrder requireUpdatableOrder(Long orderId, String newStatus) {
+        if (orderId == null || orderId <= 0) {
+            throw new IllegalArgumentException("orderId must be positive");
+        }
+
+        CustomerOrder order = customerOrderMapper.selectById(orderId);
+        if (order == null) {
+            throw new IllegalArgumentException("customer order does not exist: " + orderId);
+        }
+        if (!isAllowedOrderTransition(order.getStatus(), newStatus)) {
+            throw new IllegalArgumentException(
+                    "order status transition is not allowed: " + order.getStatus() + " -> " + newStatus);
+        }
+
+        return order;
+    }
+
+    private List<OrderItem> orderItems(Long orderId) {
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, orderId)
+                .orderByAsc(OrderItem::getItemId));
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("customer order has no items: " + orderId);
+        }
+        return items;
+    }
+
+    private boolean isAllowedOrderTransition(String currentStatus, String newStatus) {
+        return ("pending".equals(currentStatus) && "cancelled".equals(newStatus))
+                || ("paid".equals(currentStatus)
+                        && ("shipped".equals(newStatus) || "cancelled".equals(newStatus)))
+                || ("shipped".equals(currentStatus) && "completed".equals(newStatus));
+    }
+
     private Long requireLongParam(Map<String, Object> params, String fieldName) {
         Object value = params.get(fieldName);
         if (value instanceof Number number) {
@@ -218,12 +350,27 @@ public class ApprovalPayloadBuilder {
         throw new IllegalArgumentException(fieldName + " must be positive");
     }
 
+    private String requireTextParam(Map<String, Object> params, String fieldName) {
+        Object value = params.get(fieldName);
+        if (value instanceof String text && !text.isBlank()) {
+            return normalizeStatus(text);
+        }
+        throw new IllegalArgumentException(fieldName + " must not be blank");
+    }
+
+    private String normalizeStatus(String status) {
+        return status == null ? null : status.trim().toLowerCase();
+    }
+
     private String titleFor(String toolName) {
         if (PURCHASE_ORDER_CREATE_TOOL.equals(toolName)) {
             return "Create purchase order";
         }
         if (PURCHASE_ORDER_RECEIVE_TOOL.equals(toolName)) {
             return "Receive purchase order";
+        }
+        if (ORDER_UPDATE_TOOL.equals(toolName)) {
+            return "Update customer order";
         }
 
         return "Approve write operation";

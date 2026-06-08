@@ -24,4 +24,7 @@ public class CustomerOrder {
     private String status;
     private LocalDateTime createdAt;
     private LocalDateTime paidAt;
+    private LocalDateTime shippedAt;
+    private LocalDateTime completedAt;
+    private LocalDateTime cancelledAt;
 }

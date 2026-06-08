@@ -7,6 +7,8 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 import com.ecommerce.agent.dto.CustomerOrderResult;
+import com.ecommerce.agent.dto.OrderUpdateRequest;
+import com.ecommerce.agent.dto.OrderUpdateResult;
 import com.ecommerce.agent.service.CustomerOrderService;
 
 @Component
@@ -27,5 +29,20 @@ public class CustomerOrderTool {
                 .stream()
                 .map(CustomerOrderResult::from)
                 .toList();
+    }
+
+    @McpTool(name = "order_update", description = "Update a customer order fulfillment status after human approval.")
+    public OrderUpdateResult orderUpdate(
+            @McpToolParam(required = false, description = "Approval id returned by request_approval.") String approvalId,
+            @McpToolParam(description = "Customer order id to update.") Long orderId,
+            @McpToolParam(description = "New order status: shipped, completed, or cancelled.") String newStatus,
+            @McpToolParam(description = "Authenticated user id for this write operation.") Long userId,
+            @McpToolParam(description = "Authenticated session id for this write operation.") String sessionId) {
+        return customerOrderService.updateOrder(new OrderUpdateRequest(
+                approvalId,
+                orderId,
+                newStatus,
+                userId,
+                sessionId));
     }
 }
