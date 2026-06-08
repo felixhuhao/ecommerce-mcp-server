@@ -66,7 +66,9 @@ public interface StatsMapper {
                 CAST(SUM(oi.quantity) AS SIGNED) AS unitsSold,
                 COALESCE(SUM(oi.subtotal), 0) AS revenue
             FROM order_item oi
+            JOIN orders o ON o.order_id = oi.order_id
             JOIN product p ON p.product_id = oi.product_id
+            WHERE o.status IN ('paid', 'shipped', 'completed')
             GROUP BY p.product_id, p.name
             ORDER BY revenue DESC, unitsSold DESC, p.product_id
             LIMIT #{limit}
