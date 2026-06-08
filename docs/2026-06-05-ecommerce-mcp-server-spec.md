@@ -51,6 +51,11 @@ server must use the `webmvc` MCP starter, not stdio.
 Database: `ecommerce_db` (MySQL). Schema and seed data already exist in
 `src/main/resources/schema.sql` and `data.sql`.
 
+Test scope is hermetic: SpringBoot tests activate the `test` profile and use Testcontainers
+MySQL via `src/test/resources/application-test.properties`, then initialize the temporary
+database from the same `schema.sql` and `data.sql`. Tests require a Docker daemon, but must not
+require a developer's local port-3306 MySQL instance or a pre-seeded `ecommerce_db`.
+
 ### 2.1 Business Tables
 
 Two distinct order documents, modeled separately as in real ops systems: **customer sales
@@ -354,6 +359,8 @@ separately because the caller lives in the parent/Python project.
 - [x] Authenticated approve/reject/read endpoints (§4.4) — `controller/`, not MCP tools
 - [x] Write tools `purchase_order_create` (→ `placed` PO), `purchase_order_receive`
       (→ inventory +qty), `order_update` — each enforcing the full §4.3 contract
+- [x] SpringBoot tests run against hermetic Testcontainers MySQL initialized from
+      `schema.sql` + `data.sql` (no live local MySQL dependency)
 - [ ] Parent/Python project verifies end-to-end from DeepAgents `MultiServerMCPClient` with this
       Java service running as the SpringBoot MCP server under test: tool discovery, a read call,
       and an approved write — plus rejection cases (wrong hash, stale DB preconditions, replay
