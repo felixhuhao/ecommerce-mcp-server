@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import com.ecommerce.agent.domain.Inventory;
 
@@ -49,4 +50,13 @@ public interface InventoryMapper {
             @Param("productId") Long productId,
             @Param("warehouse") String warehouse,
             @Param("limit") Integer limit);
+
+    @Update("""
+            UPDATE inventory
+            SET quantity = quantity + #{quantity}
+            WHERE product_id = #{productId}
+            """)
+    int incrementQuantity(
+            @Param("productId") Long productId,
+            @Param("quantity") Integer quantity);
 }

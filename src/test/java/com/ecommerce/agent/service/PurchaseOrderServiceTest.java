@@ -12,11 +12,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.ecommerce.agent.approval.ApprovalPayloadBuilder;
 import com.ecommerce.agent.domain.ApprovalRecord;
+import com.ecommerce.agent.domain.Inventory;
 import com.ecommerce.agent.domain.PurchaseOrder;
 import com.ecommerce.agent.dto.ApprovalRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateItemRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateResult;
+import com.ecommerce.agent.dto.PurchaseOrderReceiveRequest;
+import com.ecommerce.agent.dto.PurchaseOrderReceiveResult;
+import com.ecommerce.agent.mapper.InventoryMapper;
+import com.ecommerce.agent.mapper.PurchaseOrderMapper;
 
 @SpringBootTest
 class PurchaseOrderServiceTest {
@@ -29,6 +34,12 @@ class PurchaseOrderServiceTest {
 
     @Autowired
     private ApprovalPayloadBuilder approvalPayloadBuilder;
+
+    @Autowired
+    private PurchaseOrderMapper purchaseOrderMapper;
+
+    @Autowired
+    private InventoryMapper inventoryMapper;
 
     @Test
     void findRecentPurchaseOrdersReturnsPurchaseOrders() {
@@ -103,6 +114,54 @@ class PurchaseOrderServiceTest {
         assertThat(result.approvalId()).isEqualTo(approvalId);
     }
 
+    @Test
+    void receivePurchaseOrderRequiresApprovalId() {
+        PurchaseOrderReceiveResult result = purchaseOrderService.receivePurchaseOrder(new PurchaseOrderReceiveRequest(
+                null,
+                1L,
+                1L,
+                "test-session"));
+
+        assertThat(result.status()).isEqualTo("approval_required");
+        assertThat(result.poId()).isNull();
+    }
+
+    @Test
+    @Transactional
+    void receivePurchaseOrderMarksPlacedOrderReceivedAndIncrementsInventory() {
+        Long poId = createPlacedPurchaseOrder();
+        Inventory inventoryBefore = inventoryMapper.queryInventory(2L, null, 1).getFirst();
+        PurchaseOrderReceiveRequest request = receiveRequest(null, poId);
+        String approvalId = approvedReceiveApprovalId(request);
+        PurchaseOrderReceiveRequest approvedRequest = receiveRequest(approvalId, poId);
+
+        PurchaseOrderReceiveResult result = purchaseOrderService.receivePurchaseOrder(approvedRequest);
+
+        PurchaseOrder purchaseOrder = purchaseOrderMapper.findById(poId);
+        Inventory inventoryAfter = inventoryMapper.queryInventory(2L, null, 1).getFirst();
+        assertThat(result.status()).isEqualTo("received");
+        assertThat(result.poId()).isEqualTo(poId);
+        assertThat(result.itemCount()).isEqualTo(1);
+        assertThat(purchaseOrder.getStatus()).isEqualTo("received");
+        assertThat(purchaseOrder.getReceivedAt()).isNotNull();
+        assertThat(inventoryAfter.getQuantity()).isEqualTo(inventoryBefore.getQuantity() + 10);
+    }
+
+    @Test
+    @Transactional
+    void receivePurchaseOrderRejectsStaleApprovalWhenOrderNoLongerPlaced() {
+        Long poId = createPlacedPurchaseOrder();
+        PurchaseOrderReceiveRequest request = receiveRequest(null, poId);
+        String approvalId = approvedReceiveApprovalId(request);
+        purchaseOrderMapper.markReceivedIfPlaced(poId);
+
+        PurchaseOrderReceiveResult result = purchaseOrderService.receivePurchaseOrder(receiveRequest(approvalId, poId));
+
+        assertThat(result.status()).isEqualTo("not_receivable");
+        assertThat(result.poId()).isEqualTo(poId);
+        assertThat(result.approvalId()).isEqualTo(approvalId);
+    }
+
     private String approvedApprovalId(PurchaseOrderCreateRequest request) {
         ApprovalRequest approvalRequest = approvalPayloadBuilder.purchaseOrderCreateApprovalRequest(request);
         ApprovalRecord approvalRecord = approvalService.createPending(
@@ -118,11 +177,47 @@ class PurchaseOrderServiceTest {
         return approvalRecord.getApprovalId();
     }
 
+    private String approvedReceiveApprovalId(PurchaseOrderReceiveRequest request) {
+        ApprovalRequest approvalRequest = approvalPayloadBuilder.purchaseOrderReceiveApprovalRequest(request);
+        ApprovalRecord approvalRecord = approvalService.createPending(
+                approvalRequest.toolName(),
+                approvalRequest.operationType(),
+                approvalPayloadBuilder.operationPayloadJson(approvalRequest),
+                approvalPayloadBuilder.operationDetailJson(approvalRequest),
+                approvalRequest.userId(),
+                approvalRequest.sessionId());
+
+        assertThat(approvalService.approve(approvalRecord.getApprovalId(), request.userId(), request.sessionId()))
+                .isTrue();
+        return approvalRecord.getApprovalId();
+    }
+
+    private Long createPlacedPurchaseOrder() {
+        PurchaseOrderCreateRequest request = createRequest(null);
+        String approvalId = approvedApprovalId(request);
+        PurchaseOrderCreateResult result = purchaseOrderService.createPurchaseOrder(new PurchaseOrderCreateRequest(
+                approvalId,
+                request.supplierId(),
+                request.items(),
+                request.userId(),
+                request.sessionId()));
+        assertThat(result.status()).isEqualTo("created");
+        return result.poId();
+    }
+
     private PurchaseOrderCreateRequest createRequest(String approvalId) {
         return new PurchaseOrderCreateRequest(
                 approvalId,
                 1L,
                 List.of(new PurchaseOrderCreateItemRequest(2L, 10, new BigDecimal("12.50"))),
+                1L,
+                "test-session");
+    }
+
+    private PurchaseOrderReceiveRequest receiveRequest(String approvalId, Long poId) {
+        return new PurchaseOrderReceiveRequest(
+                approvalId,
+                poId,
                 1L,
                 "test-session");
     }

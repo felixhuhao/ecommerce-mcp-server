@@ -13,6 +13,9 @@ import com.ecommerce.agent.dto.ApprovalRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateItemRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateResult;
+import com.ecommerce.agent.dto.PurchaseOrderReceiveRequest;
+import com.ecommerce.agent.dto.PurchaseOrderReceiveResult;
+import com.ecommerce.agent.mapper.InventoryMapper;
 import com.ecommerce.agent.mapper.PurchaseOrderMapper;
 
 @Service
@@ -23,14 +26,17 @@ public class PurchaseOrderService {
     private static final String PLACED_STATUS = "placed";
 
     private final PurchaseOrderMapper purchaseOrderMapper;
+    private final InventoryMapper inventoryMapper;
     private final ApprovalService approvalService;
     private final ApprovalPayloadBuilder approvalPayloadBuilder;
 
     public PurchaseOrderService(
             PurchaseOrderMapper purchaseOrderMapper,
+            InventoryMapper inventoryMapper,
             ApprovalService approvalService,
             ApprovalPayloadBuilder approvalPayloadBuilder) {
         this.purchaseOrderMapper = purchaseOrderMapper;
+        this.inventoryMapper = inventoryMapper;
         this.approvalService = approvalService;
         this.approvalPayloadBuilder = approvalPayloadBuilder;
     }
@@ -77,6 +83,45 @@ public class PurchaseOrderService {
                 request.approvalId());
     }
 
+    @Transactional
+    public PurchaseOrderReceiveResult receivePurchaseOrder(PurchaseOrderReceiveRequest request) {
+        validateReceiveRequest(request);
+
+        if (request.approvalId() == null || request.approvalId().isBlank()) {
+            return PurchaseOrderReceiveResult.approvalRequired();
+        }
+
+        ApprovalRequest approvalRequest = approvalPayloadBuilder.purchaseOrderReceiveApprovalRequest(request);
+        String operationPayload;
+        List<PurchaseOrderItem> items;
+        try {
+            operationPayload = approvalPayloadBuilder.operationPayloadJson(approvalRequest);
+            items = purchaseOrderMapper.findItemsByPoId(request.poId());
+        } catch (IllegalArgumentException e) {
+            return PurchaseOrderReceiveResult.notReceivable(request.approvalId(), request.poId(), e.getMessage());
+        }
+
+        boolean consumed = approvalService.consumeApproved(
+                request.approvalId(),
+                ApprovalPayloadBuilder.PURCHASE_ORDER_RECEIVE_TOOL,
+                operationPayload,
+                request.userId(),
+                request.sessionId());
+
+        if (!consumed) {
+            return PurchaseOrderReceiveResult.invalidApproval(request.approvalId());
+        }
+
+        int purchaseOrderRows = purchaseOrderMapper.markReceivedIfPlaced(request.poId());
+        if (purchaseOrderRows != 1) {
+            throw new IllegalStateException("purchase order could not be marked received: " + request.poId());
+        }
+
+        items.forEach(this::incrementInventory);
+
+        return PurchaseOrderReceiveResult.received(request.poId(), items.size(), request.approvalId());
+    }
+
     private int normalizeLimit(Integer limit) {
         if (limit == null || limit <= 0) {
             return DEFAULT_LIMIT;
@@ -103,6 +148,21 @@ public class PurchaseOrderService {
         }
 
         request.items().forEach(this::validateCreateItemRequest);
+    }
+
+    private void validateReceiveRequest(PurchaseOrderReceiveRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("request must not be null");
+        }
+        if (request.poId() == null || request.poId() <= 0) {
+            throw new IllegalArgumentException("poId must be positive");
+        }
+        if (request.userId() == null || request.userId() <= 0) {
+            throw new IllegalArgumentException("userId must be positive");
+        }
+        if (request.sessionId() == null || request.sessionId().isBlank()) {
+            throw new IllegalArgumentException("sessionId must not be blank");
+        }
     }
 
     private void validateCreateItemRequest(PurchaseOrderCreateItemRequest item) {
@@ -138,5 +198,12 @@ public class PurchaseOrderService {
 
     private BigDecimal subtotal(PurchaseOrderCreateItemRequest item) {
         return item.unitCost().multiply(BigDecimal.valueOf(item.quantity()));
+    }
+
+    private void incrementInventory(PurchaseOrderItem item) {
+        int inventoryRows = inventoryMapper.incrementQuantity(item.getProductId(), item.getQuantity());
+        if (inventoryRows != 1) {
+            throw new IllegalStateException("inventory row does not exist for product: " + item.getProductId());
+        }
     }
 }

@@ -56,4 +56,52 @@ class PurchaseOrderMapperTest {
         assertThat(itemRows).isEqualTo(1);
         assertThat(item.getPoItemId()).isNotNull();
     }
+
+    @Test
+    @Transactional
+    void findByIdAndItemsReturnInsertedPurchaseOrder() {
+        PurchaseOrder purchaseOrder = insertPurchaseOrderWithOneItem();
+
+        PurchaseOrder found = purchaseOrderMapper.findById(purchaseOrder.getPoId());
+        List<PurchaseOrderItem> items = purchaseOrderMapper.findItemsByPoId(purchaseOrder.getPoId());
+
+        assertThat(found).isNotNull();
+        assertThat(found.getStatus()).isEqualTo("placed");
+        assertThat(items).hasSize(1);
+        assertThat(items.getFirst().getProductId()).isEqualTo(2L);
+        assertThat(items.getFirst().getQuantity()).isEqualTo(10);
+    }
+
+    @Test
+    @Transactional
+    void markReceivedIfPlacedOnlyReceivesPlacedPurchaseOrderOnce() {
+        PurchaseOrder purchaseOrder = insertPurchaseOrderWithOneItem();
+
+        int firstUpdateRows = purchaseOrderMapper.markReceivedIfPlaced(purchaseOrder.getPoId());
+        int secondUpdateRows = purchaseOrderMapper.markReceivedIfPlaced(purchaseOrder.getPoId());
+        PurchaseOrder found = purchaseOrderMapper.findById(purchaseOrder.getPoId());
+
+        assertThat(firstUpdateRows).isEqualTo(1);
+        assertThat(secondUpdateRows).isZero();
+        assertThat(found.getStatus()).isEqualTo("received");
+        assertThat(found.getReceivedAt()).isNotNull();
+    }
+
+    private PurchaseOrder insertPurchaseOrderWithOneItem() {
+        PurchaseOrder purchaseOrder = new PurchaseOrder();
+        purchaseOrder.setSupplierId(1L);
+        purchaseOrder.setStatus("placed");
+        purchaseOrder.setTotalCost(new BigDecimal("125.00"));
+        purchaseOrderMapper.insertPurchaseOrder(purchaseOrder);
+
+        PurchaseOrderItem item = new PurchaseOrderItem();
+        item.setPoId(purchaseOrder.getPoId());
+        item.setProductId(2L);
+        item.setQuantity(10);
+        item.setUnitCost(new BigDecimal("12.50"));
+        item.setSubtotal(new BigDecimal("125.00"));
+        purchaseOrderMapper.insertPurchaseOrderItem(item);
+
+        return purchaseOrder;
+    }
 }
