@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.ecommerce.agent.auth.TrustedActorContext;
 import com.ecommerce.agent.dto.ApprovalResponse;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -27,6 +28,9 @@ class ApprovalToolTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private TrustedActorContext trustedActorContext;
+
     @Test
     void requestApprovalCreatesPendingApprovalFromStructuredParams() throws JacksonException {
         Map<String, Object> operationParams = Map.of(
@@ -36,12 +40,10 @@ class ApprovalToolTest {
                         "quantity", 50,
                         "unitCost", new BigDecimal("12.50"))));
 
-        ApprovalResponse response = approvalTool.requestApproval(
+        ApprovalResponse response = trustedActorContext.runAs(1L, "test-session", () -> approvalTool.requestApproval(
                 "purchase_order_create",
                 "create",
-                operationParams,
-                1L,
-                "test-session");
+                operationParams));
 
         assertThat(response.approvalId()).isNotBlank();
         assertThat(response.operationHash()).hasSize(64);
@@ -58,24 +60,20 @@ class ApprovalToolTest {
 
     @Test
     void requestApprovalRejectsUnsupportedToolName() {
-        assertThatThrownBy(() -> approvalTool.requestApproval(
+        assertThatThrownBy(() -> trustedActorContext.runAs(1L, "test-session", () -> approvalTool.requestApproval(
                 "order_delete",
                 "delete",
-                Map.of("orderId", 1),
-                1L,
-                "test-session"))
+                Map.of("orderId", 1))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("unsupported approval toolName: order_delete");
     }
 
     @Test
     void requestApprovalRejectsWrongPurchaseOrderOperationType() {
-        assertThatThrownBy(() -> approvalTool.requestApproval(
+        assertThatThrownBy(() -> trustedActorContext.runAs(1L, "test-session", () -> approvalTool.requestApproval(
                 "purchase_order_create",
                 "update",
-                Map.of("supplierId", 1),
-                1L,
-                "test-session"))
+                Map.of("supplierId", 1))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("purchase_order_create operationType must be create");
     }

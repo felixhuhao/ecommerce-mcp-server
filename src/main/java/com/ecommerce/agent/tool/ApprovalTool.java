@@ -7,6 +7,8 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 import com.ecommerce.agent.approval.ApprovalPayloadBuilder;
+import com.ecommerce.agent.auth.TrustedActor;
+import com.ecommerce.agent.auth.TrustedActorContext;
 import com.ecommerce.agent.domain.ApprovalRecord;
 import com.ecommerce.agent.dto.ApprovalRequest;
 import com.ecommerce.agent.dto.ApprovalResponse;
@@ -17,20 +19,24 @@ public class ApprovalTool {
 
     private final ApprovalService approvalService;
     private final ApprovalPayloadBuilder approvalPayloadBuilder;
+    private final TrustedActorContext trustedActorContext;
 
-    public ApprovalTool(ApprovalService approvalService, ApprovalPayloadBuilder approvalPayloadBuilder) {
+    public ApprovalTool(
+            ApprovalService approvalService,
+            ApprovalPayloadBuilder approvalPayloadBuilder,
+            TrustedActorContext trustedActorContext) {
         this.approvalService = approvalService;
         this.approvalPayloadBuilder = approvalPayloadBuilder;
+        this.trustedActorContext = trustedActorContext;
     }
 
     @McpTool(name = "request_approval", description = "Request human approval for a structured write operation.")
     public ApprovalResponse requestApproval(
             @McpToolParam(description = "Write tool name that this approval authorizes.") String toolName,
             @McpToolParam(description = "Operation type, such as create, update, or receive.") String operationType,
-            @McpToolParam(description = "Structured operation parameters. The Agent must not provide approval text.") Map<String, Object> operationParams,
-            @McpToolParam(description = "Authenticated user id for this approval request.") Long userId,
-            @McpToolParam(description = "Authenticated session id for this approval request.") String sessionId) {
-        ApprovalRequest request = new ApprovalRequest(toolName, operationType, operationParams, userId, sessionId);
+            @McpToolParam(description = "Structured operation parameters. The Agent must not provide approval text.") Map<String, Object> operationParams) {
+        TrustedActor actor = trustedActorContext.requireCurrentActor();
+        ApprovalRequest request = new ApprovalRequest(toolName, operationType, operationParams, actor.userId(), actor.sessionId());
         approvalPayloadBuilder.validateSupportedRequest(request);
 
         ApprovalRecord approvalRecord = approvalService.createPending(

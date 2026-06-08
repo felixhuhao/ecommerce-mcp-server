@@ -17,10 +17,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ecommerce.agent.domain.ApprovalRecord;
 import com.ecommerce.agent.service.ApprovalService;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.auth.service-token=test-service-token")
 @AutoConfigureMockMvc
 @Transactional
 class ApprovalControllerTest {
+
+    private static final String SERVICE_TOKEN = "test-service-token";
 
     @Autowired
     private MockMvc mockMvc;
@@ -33,6 +35,7 @@ class ApprovalControllerTest {
         ApprovalRecord approvalRecord = createPendingApproval("test-session");
 
         mockMvc.perform(get("/approvals/{approvalId}", approvalRecord.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
                 .header("X-User-Id", "1")
                 .header("X-Session-Id", "test-session"))
                 .andExpect(status().isOk())
@@ -47,6 +50,7 @@ class ApprovalControllerTest {
         ApprovalRecord approvalRecord = createPendingApproval("test-session");
 
         mockMvc.perform(get("/approvals/{approvalId}", approvalRecord.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
                 .header("X-User-Id", "1")
                 .header("X-Session-Id", "other-session"))
                 .andExpect(status().isNotFound());
@@ -57,6 +61,7 @@ class ApprovalControllerTest {
         ApprovalRecord approvalRecord = createPendingApproval("test-session");
 
         mockMvc.perform(post("/approvals/{approvalId}/approve", approvalRecord.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
                 .header("X-User-Id", "1")
                 .header("X-Session-Id", "test-session"))
                 .andExpect(status().isOk())
@@ -70,6 +75,7 @@ class ApprovalControllerTest {
         ApprovalRecord approvalRecord = createPendingApproval("test-session");
 
         mockMvc.perform(post("/approvals/{approvalId}/reject", approvalRecord.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
                 .header("X-User-Id", "1")
                 .header("X-Session-Id", "test-session")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -85,10 +91,21 @@ class ApprovalControllerTest {
         ApprovalRecord approvalRecord = createPendingApproval("test-session");
 
         mockMvc.perform(post("/approvals/{approvalId}/approve", approvalRecord.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
                 .header("X-User-Id", "1")
                 .header("X-Session-Id", "other-session"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.changed").value(false));
+    }
+
+    @Test
+    void approveRejectsMissingServiceToken() throws Exception {
+        ApprovalRecord approvalRecord = createPendingApproval("test-session");
+
+        mockMvc.perform(post("/approvals/{approvalId}/approve", approvalRecord.getApprovalId())
+                .header("X-User-Id", "1")
+                .header("X-Session-Id", "test-session"))
+                .andExpect(status().isUnauthorized());
     }
 
     private ApprovalRecord createPendingApproval(String sessionId) {

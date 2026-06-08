@@ -6,6 +6,8 @@ import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
+import com.ecommerce.agent.auth.TrustedActor;
+import com.ecommerce.agent.auth.TrustedActorContext;
 import com.ecommerce.agent.dto.CustomerOrderResult;
 import com.ecommerce.agent.dto.OrderUpdateRequest;
 import com.ecommerce.agent.dto.OrderUpdateResult;
@@ -15,9 +17,11 @@ import com.ecommerce.agent.service.CustomerOrderService;
 public class CustomerOrderTool {
 
     private final CustomerOrderService customerOrderService;
+    private final TrustedActorContext trustedActorContext;
 
-    public CustomerOrderTool(CustomerOrderService customerOrderService) {
+    public CustomerOrderTool(CustomerOrderService customerOrderService, TrustedActorContext trustedActorContext) {
         this.customerOrderService = customerOrderService;
+        this.trustedActorContext = trustedActorContext;
     }
 
     @McpTool(name = "order_query", description = "Query customer sales orders with line items.")
@@ -35,14 +39,13 @@ public class CustomerOrderTool {
     public OrderUpdateResult orderUpdate(
             @McpToolParam(required = false, description = "Approval id returned by request_approval.") String approvalId,
             @McpToolParam(description = "Customer order id to update.") Long orderId,
-            @McpToolParam(description = "New order status: shipped, completed, or cancelled.") String newStatus,
-            @McpToolParam(description = "Authenticated user id for this write operation.") Long userId,
-            @McpToolParam(description = "Authenticated session id for this write operation.") String sessionId) {
+            @McpToolParam(description = "New order status: shipped, completed, or cancelled.") String newStatus) {
+        TrustedActor actor = trustedActorContext.requireCurrentActor();
         return customerOrderService.updateOrder(new OrderUpdateRequest(
                 approvalId,
                 orderId,
                 newStatus,
-                userId,
-                sessionId));
+                actor.userId(),
+                actor.sessionId()));
     }
 }

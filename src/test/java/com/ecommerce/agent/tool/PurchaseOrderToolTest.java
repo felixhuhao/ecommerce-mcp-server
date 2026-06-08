@@ -11,6 +11,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ecommerce.agent.approval.ApprovalPayloadBuilder;
+import com.ecommerce.agent.auth.TrustedActorContext;
 import com.ecommerce.agent.domain.ApprovalRecord;
 import com.ecommerce.agent.dto.ApprovalRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateItemRequest;
@@ -33,6 +34,9 @@ class PurchaseOrderToolTest {
     @Autowired
     private ApprovalPayloadBuilder approvalPayloadBuilder;
 
+    @Autowired
+    private TrustedActorContext trustedActorContext;
+
     @Test
     void purchaseOrderQueryReturnsPurchaseOrders() {
         List<PurchaseOrderResult> orders = purchaseOrderTool.purchaseOrderQuery(5);
@@ -47,12 +51,10 @@ class PurchaseOrderToolTest {
 
     @Test
     void purchaseOrderCreateRequiresApprovalId() {
-        PurchaseOrderCreateResult result = purchaseOrderTool.purchaseOrderCreate(
+        PurchaseOrderCreateResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderCreate(
                 null,
                 1L,
-                items(),
-                1L,
-                "test-session");
+                items()));
 
         assertThat(result.status()).isEqualTo("approval_required");
         assertThat(result.poId()).isNull();
@@ -64,12 +66,10 @@ class PurchaseOrderToolTest {
         PurchaseOrderCreateRequest request = createRequest(null);
         String approvalId = approvedApprovalId(request);
 
-        PurchaseOrderCreateResult result = purchaseOrderTool.purchaseOrderCreate(
+        PurchaseOrderCreateResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderCreate(
                 approvalId,
                 request.supplierId(),
-                request.items(),
-                request.userId(),
-                request.sessionId());
+                request.items()));
 
         assertThat(result.status()).isEqualTo("created");
         assertThat(result.poId()).isNotNull();
@@ -80,11 +80,9 @@ class PurchaseOrderToolTest {
 
     @Test
     void purchaseOrderReceiveRequiresApprovalId() {
-        PurchaseOrderReceiveResult result = purchaseOrderTool.purchaseOrderReceive(
+        PurchaseOrderReceiveResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderReceive(
                 null,
-                1L,
-                1L,
-                "test-session");
+                1L));
 
         assertThat(result.status()).isEqualTo("approval_required");
         assertThat(result.poId()).isNull();
@@ -97,11 +95,9 @@ class PurchaseOrderToolTest {
         PurchaseOrderReceiveRequest request = receiveRequest(null, created.poId());
         String approvalId = approvedReceiveApprovalId(request);
 
-        PurchaseOrderReceiveResult result = purchaseOrderTool.purchaseOrderReceive(
+        PurchaseOrderReceiveResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderReceive(
                 approvalId,
-                created.poId(),
-                request.userId(),
-                request.sessionId());
+                created.poId()));
 
         assertThat(result.status()).isEqualTo("received");
         assertThat(result.poId()).isEqualTo(created.poId());
@@ -141,12 +137,10 @@ class PurchaseOrderToolTest {
     private PurchaseOrderCreateResult createPlacedPurchaseOrder() {
         PurchaseOrderCreateRequest request = createRequest(null);
         String approvalId = approvedApprovalId(request);
-        PurchaseOrderCreateResult result = purchaseOrderTool.purchaseOrderCreate(
+        PurchaseOrderCreateResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderCreate(
                 approvalId,
                 request.supplierId(),
-                request.items(),
-                request.userId(),
-                request.sessionId());
+                request.items()));
         assertThat(result.status()).isEqualTo("created");
         return result;
     }

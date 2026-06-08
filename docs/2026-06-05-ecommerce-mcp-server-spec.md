@@ -9,6 +9,11 @@ orchestration, FastAPI web layer, sandbox, memory system, and frontend are cover
 in the parent spec and are out of scope here. Cross-boundary context is included
 where it constrains the Java design (tool contracts, approval flow).
 
+End-to-end verification from `MultiServerMCPClient` is a **parent/Python project**
+responsibility. This Java project is the server under test: it should expose the
+MCP tools, enforce approvals, and provide SpringBoot tests/smoke checks, but it
+should not own the Agent caller, LangGraph checkpoint, or FastAPI HITL loop.
+
 ## 1. Role & Boundary
 
 This service is the **MCP server** for the assistant: it exposes e-commerce business
@@ -18,7 +23,7 @@ all reads and writes to `ecommerce_db`.
 **Java owns:**
 - Business logic (query / create / update over products, orders, inventory, users, suppliers)
 - The MySQL database and all SQL
-- The business-tool **MCP surface** (Spring AI `@Tool` methods)
+- The business-tool **MCP surface** (Spring AI `@McpTool` methods)
 - **HITL approval enforcement** — write tools refuse to execute without a valid `approval_id`
 
 **Java does NOT own (lives in the Python/Agent side):**
@@ -32,7 +37,7 @@ all reads and writes to `ecommerce_db`.
 ```
 DeepAgents Agent (MultiServerMCPClient)
   ├──► SpringBoot MCP Server  ◄── this spec
-  │       @Tool business tools + approval enforcement
+  │       @McpTool business tools + approval enforcement
   │       Service → Mapper → MySQL (ecommerce_db)
   ├──► ModelScope MCP (charts)
   └──► Python MCP (sandbox / run_code)
@@ -113,13 +118,13 @@ to enforce tool binding, actor/session binding, and one-time use — see §4.3.
 
 ## 3. MCP Tools
 
-Business capability is exposed as Spring AI `@Tool` methods. Spring AI derives the
-MCP tool schema from the method signature plus `@ToolParam` metadata, and the
+Business capability is exposed as Spring AI `@McpTool` methods. Spring AI derives the
+MCP tool schema from the method signature plus `@McpToolParam` metadata, and the
 `spring-ai-starter-mcp-server-webmvc` starter serves them over streamable-HTTP/SSE
 for the DeepAgents client to discover and call.
 
 Tool names follow a consistent `{domain}_{action}` convention. Every tool below is a SpringBoot
-`@Tool`. Visualization and sandbox/`run_code` tools that the sub-agents also use are **not**
+`@McpTool`. Visualization and sandbox/`run_code` tools that the sub-agents also use are **not**
 served here — they belong to the ModelScope and Python MCP servers (see parent spec §8.2).
 
 | MCP Tool | Type | Service Method | Description |
@@ -128,15 +133,18 @@ served here — they belong to the ModelScope and Python MCP servers (see parent
 | product_search | Read | ProductService.search | Search products by name (fuzzy) |
 | order_query | Read | OrderService.searchDetails | Search customer sales orders + items with date/product filters |
 | inventory_query | Read | InventoryService.query | Query inventory levels for products/warehouses |
-| inventory_warning | Read | InventoryService.warning | List items below safety stock |
+| inventory_low_stock | Read | InventoryService.findLowStockItems | List items below safety stock |
 | user_query | Read | UserService.query | Query customer accounts (by name/level/id) |
 | supplier_query | Read | SupplierService.search | Search suppliers by name (fuzzy) |
+| supplier_top | Read | SupplierService.findTopSuppliers | List top suppliers by rating and lead time |
 | purchase_order_query | Read | PurchaseOrderService.query | Query supplier purchase orders |
-| get_statistics | Read | StatsService.get | Aggregated business statistics |
 | purchase_order_create | Write | PurchaseOrderService.create | Create a supplier purchase order — restock (requires approval_id) |
 | purchase_order_receive | Write | PurchaseOrderService.receive | Mark a PO received → increment inventory (requires approval_id) |
 | order_update | Write | OrderService.update | Update a customer order's fulfillment status (requires approval_id) |
 | request_approval | Write | ApprovalService.create | Take structured operation params; Java builds the canonical authorization payload (params + server preconditions), hashes it, derives the human-facing card server-side, stores a pending record, returns approval_id |
+
+Planned post-core read tool: `get_statistics` (`StatsService.get`) for aggregation-first
+analytics once the parent Agent needs it.
 
 **Post-MVP write tools** (documented so the approval framework anticipates them, not built yet):
 `order_cancel` (High-risk batch — "cancel pending orders >30 days") and any delete tool, both
@@ -162,13 +170,13 @@ public class ProductTools {
 
     private final ProductService productService;
 
-    @Tool(name = "product_query",
+    @McpTool(name = "product_query",
           description = "分页查询商品列表，支持按名称模糊查询和分类筛选。")
     public PageResult<ProductDTO> queryProducts(
-            @ToolParam(required = false, description = "分类") String category,
-            @ToolParam(required = false, description = "名称模糊匹配") String name,
-            @ToolParam(description = "页码") int current,
-            @ToolParam(description = "每页数量") int size) {
+            @McpToolParam(required = false, description = "分类") String category,
+            @McpToolParam(required = false, description = "名称模糊匹配") String name,
+            @McpToolParam(description = "页码") int current,
+            @McpToolParam(description = "每页数量") int size) {
         return productService.page(category, name, current, size);
     }
 }
@@ -198,8 +206,19 @@ Delete/Batch is documented so the framework anticipates it, but no MVP write too
 
 Trusted identity is **not** part of the Agent-authored payload. For MCP calls, Java derives
 `user_id` and `session_id` from trusted request metadata (for example a service-authenticated
-FastAPI header/JWT/session binding), never from `@ToolParam` fields or `operation_payload`.
+FastAPI header/JWT/session binding), never from `@McpToolParam` fields or `operation_payload`.
 The Agent can request an operation, but it cannot choose which actor/session the approval binds to.
+
+Current implementation: `TrustedActorFilter` requires a service-authenticated
+`X-Service-Token` and then derives the actor from `X-User-Id` / `X-Session-Id`, storing it in
+`TrustedActorContext` for the controller and MCP tool layers. The parent FastAPI caller owns the
+real user session and is responsible for forwarding these trusted headers; the Agent never sees
+or fills them as tool parameters.
+
+Deployment note: the token used to call MCP tools should not be exposed to Agent-generated code
+or sandbox networking. For production, prefer separate credentials for the MCP tool surface and
+the human approval REST surface (or a human JWT for `/approvals/**`) so the approval transition is
+cryptographically distinct from the Agent tool path.
 
 ```
 Agent calls request_approval(tool_name, operation_params)   ← structured params only, no prose/identity
@@ -287,17 +306,18 @@ This is the one REST surface the agent path genuinely requires (see §5).
 
 ```
 com.ecommerce.agent/
-├── tool/           # @Tool MCP tools (exposed via Spring AI)
+├── tool/           # @McpTool MCP tools (exposed via Spring AI)
 ├── controller/     # Approval REST endpoints (§4.4) — human/FastAPI only, NOT MCP
 ├── service/        # Business logic + approval enforcement
 ├── mapper/         # MyBatis mappers (XML for complex queries)
 ├── entity/         # MyBatis entities
 ├── dto/            # Tool request/response DTOs
+├── auth/           # Trusted actor context and actor value object
 └── config/         # Spring configuration (MCP server, datasource, auth)
 ```
 
 > `controller/` is **required** — it hosts the authenticated approve/reject/read endpoints
-> from §4.4. Business reads/writes stay on the MCP `@Tool` path; the controller exists only for
+> from §4.4. Business reads/writes stay on the MCP `@McpTool` path; the controller exists only for
 > the human-driven approval transition (and any future non-agent client).
 
 ## 6. Technology Stack
@@ -305,33 +325,35 @@ com.ecommerce.agent/
 | Concern | Choice |
 |---------|--------|
 | Language / runtime | Java + SpringBoot |
-| MCP server | Spring AI — `spring-ai-starter-mcp-server-webmvc` (streamable-HTTP/SSE) |
+| MCP server | Spring AI — `spring-ai-starter-mcp-server-webmvc` (`STREAMABLE` HTTP at `/mcp`) |
 | Persistence | MyBatis + MySQL (`ecommerce_db`) |
-| Tool schema | Generated by Spring AI from `@Tool` / `@ToolParam` |
+| Tool schema | Generated by Spring AI from `@McpTool` / `@McpToolParam` |
 
 (Exact SpringBoot / Spring AI versions to be pinned at scaffold time.)
 
 ## 7. Roadmap (Java scope)
 
-Tracks the Java slice of the parent roadmap. DB groundwork is done.
+Tracks the Java slice of the parent roadmap. Cross-project Agent E2E is tracked
+separately because the caller lives in the parent/Python project.
 
 - [x] MySQL schema (7 base business tables)
 - [x] Seed sample data (products, customer orders, users, suppliers)
-- [ ] Add `purchase_order` / `purchase_order_item` tables + `approval_record` (with the §2.2
+- [x] Add `purchase_order` / `purchase_order_item` tables + `approval_record` (with the §2.2
       binding/audit columns); seed a few historical received POs
-- [ ] SpringBoot + Spring AI MCP server scaffold; serve over streamable-HTTP/SSE
-- [ ] Read-only tools: `product_query`, `product_search`, `order_query`, `inventory_query`,
-      `inventory_warning`, `user_query`, `supplier_query`, `purchase_order_query`,
-      `get_statistics` (all with pagination defaults + caps, §3.0)
+- [x] SpringBoot + Spring AI MCP server scaffold; serve over streamable-HTTP/SSE
+- [x] Core read-only tools: `product_query`, `product_search`, `order_query`, `inventory_query`,
+      `inventory_low_stock`, `user_query`, `supplier_query`, `supplier_top`,
+      `purchase_order_query` (with pagination/limit defaults + caps where applicable, §3.0)
 - [ ] `get_statistics` aggregations (whatever the analyst sub-agent needs)
-- [ ] `request_approval` → build canonical payload (params + server preconditions), hash it,
+- [x] `request_approval` → build canonical payload (params + server preconditions), hash it,
       **render the card server-side**, create pending `approval_record` (tool/actor/session binding)
-- [ ] Authenticated approve/reject/read endpoints (§4.4) — `controller/`, not MCP tools
-- [ ] Write tools `purchase_order_create` (→ `placed` PO), `purchase_order_receive`
+- [x] Authenticated approve/reject/read endpoints (§4.4) — `controller/`, not MCP tools
+- [x] Write tools `purchase_order_create` (→ `placed` PO), `purchase_order_receive`
       (→ inventory +qty), `order_update` — each enforcing the full §4.3 contract
-- [ ] Verify end-to-end from the DeepAgents `MultiServerMCPClient`: tool discovery, a read
-      call, and an approved write — plus rejection cases (wrong hash, stale DB preconditions,
-      replay across session, expired, tampered detail vs payload)
+- [ ] Parent/Python project verifies end-to-end from DeepAgents `MultiServerMCPClient` with this
+      Java service running as the SpringBoot MCP server under test: tool discovery, a read call,
+      and an approved write — plus rejection cases (wrong hash, stale DB preconditions, replay
+      across session, expired, tampered detail vs payload)
 
 **First milestone (matches parent Week 1):** MCP server up with the read-only tools,
 reachable from the Agent — "Check phone category inventory" returns data.

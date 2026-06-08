@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ecommerce.agent.approval.ApprovalPayloadBuilder;
+import com.ecommerce.agent.auth.TrustedActorContext;
 import com.ecommerce.agent.domain.ApprovalRecord;
 import com.ecommerce.agent.dto.CustomerOrderResult;
 import com.ecommerce.agent.dto.ApprovalRequest;
@@ -28,6 +29,9 @@ class CustomerOrderToolTest {
 
     @Autowired
     private ApprovalPayloadBuilder approvalPayloadBuilder;
+
+    @Autowired
+    private TrustedActorContext trustedActorContext;
 
     @Test
     void orderQueryReturnsOrdersWithItems() {
@@ -62,12 +66,10 @@ class CustomerOrderToolTest {
 
     @Test
     void orderUpdateRequiresApprovalId() {
-        OrderUpdateResult result = customerOrderTool.orderUpdate(
+        OrderUpdateResult result = trustedActorContext.runAs(1L, "test-session", () -> customerOrderTool.orderUpdate(
                 null,
                 1L,
-                "shipped",
-                1L,
-                "test-session");
+                "shipped"));
 
         assertThat(result.status()).isEqualTo("approval_required");
         assertThat(result.orderId()).isNull();
@@ -80,12 +82,10 @@ class CustomerOrderToolTest {
         OrderUpdateRequest request = updateRequest(null, orderId, "shipped");
         String approvalId = approvedOrderUpdateApprovalId(request);
 
-        OrderUpdateResult result = customerOrderTool.orderUpdate(
+        OrderUpdateResult result = trustedActorContext.runAs(1L, "test-session", () -> customerOrderTool.orderUpdate(
                 approvalId,
                 orderId,
-                "shipped",
-                request.userId(),
-                request.sessionId());
+                "shipped"));
 
         assertThat(result.status()).isEqualTo("updated");
         assertThat(result.orderId()).isEqualTo(orderId);
