@@ -1,5 +1,8 @@
 package com.ecommerce.agent.approval;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -7,19 +10,25 @@ import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ecommerce.agent.domain.CustomerOrder;
+import com.ecommerce.agent.domain.Inventory;
+import com.ecommerce.agent.domain.OrderItem;
 import com.ecommerce.agent.domain.PurchaseOrder;
 import com.ecommerce.agent.domain.PurchaseOrderItem;
-import com.ecommerce.agent.domain.CustomerOrder;
-import com.ecommerce.agent.domain.OrderItem;
+import com.ecommerce.agent.domain.Product;
+import com.ecommerce.agent.domain.Supplier;
 import com.ecommerce.agent.dto.ApprovalRequest;
 import com.ecommerce.agent.dto.OrderUpdateRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateItemRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateRequest;
 import com.ecommerce.agent.dto.PurchaseOrderReceiveRequest;
 import com.ecommerce.agent.mapper.CustomerOrderMapper;
+import com.ecommerce.agent.mapper.InventoryMapper;
 import com.ecommerce.agent.mapper.OrderItemMapper;
+import com.ecommerce.agent.mapper.ProductMapper;
 import com.ecommerce.agent.mapper.PurchaseOrderMapper;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ecommerce.agent.mapper.SupplierMapper;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -41,16 +50,25 @@ public class ApprovalPayloadBuilder {
 
     private final ObjectMapper objectMapper;
     private final PurchaseOrderMapper purchaseOrderMapper;
+    private final SupplierMapper supplierMapper;
+    private final ProductMapper productMapper;
+    private final InventoryMapper inventoryMapper;
     private final CustomerOrderMapper customerOrderMapper;
     private final OrderItemMapper orderItemMapper;
 
     public ApprovalPayloadBuilder(
             ObjectMapper objectMapper,
             PurchaseOrderMapper purchaseOrderMapper,
+            SupplierMapper supplierMapper,
+            ProductMapper productMapper,
+            InventoryMapper inventoryMapper,
             CustomerOrderMapper customerOrderMapper,
             OrderItemMapper orderItemMapper) {
         this.objectMapper = objectMapper;
         this.purchaseOrderMapper = purchaseOrderMapper;
+        this.supplierMapper = supplierMapper;
+        this.productMapper = productMapper;
+        this.inventoryMapper = inventoryMapper;
         this.customerOrderMapper = customerOrderMapper;
         this.orderItemMapper = orderItemMapper;
     }
@@ -112,6 +130,9 @@ public class ApprovalPayloadBuilder {
     }
 
     private Map<String, Object> operationPayload(ApprovalRequest request) {
+        if (PURCHASE_ORDER_CREATE_TOOL.equals(request.toolName())) {
+            return purchaseOrderCreatePayload(request);
+        }
         if (PURCHASE_ORDER_RECEIVE_TOOL.equals(request.toolName())) {
             return purchaseOrderReceivePayload(request);
         }
@@ -127,6 +148,9 @@ public class ApprovalPayloadBuilder {
     }
 
     private Map<String, Object> operationDetail(ApprovalRequest request) {
+        if (PURCHASE_ORDER_CREATE_TOOL.equals(request.toolName())) {
+            return purchaseOrderCreateDetail(request);
+        }
         if (PURCHASE_ORDER_RECEIVE_TOOL.equals(request.toolName())) {
             return purchaseOrderReceiveDetail(request);
         }
@@ -139,6 +163,28 @@ public class ApprovalPayloadBuilder {
         detail.put("toolName", request.toolName());
         detail.put("operationType", request.operationType());
         detail.put("operationParams", request.operationParams());
+        return detail;
+    }
+
+    private Map<String, Object> purchaseOrderCreatePayload(ApprovalRequest request) {
+        PurchaseOrderCreateSnapshot snapshot = purchaseOrderCreateSnapshot(request.operationParams());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("toolName", request.toolName());
+        payload.put("operationType", request.operationType());
+        payload.put("operationParams", snapshot.operationParams());
+        payload.put("currentState", snapshot.payloadState());
+        return payload;
+    }
+
+    private Map<String, Object> purchaseOrderCreateDetail(ApprovalRequest request) {
+        PurchaseOrderCreateSnapshot snapshot = purchaseOrderCreateSnapshot(request.operationParams());
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("title", titleFor(request.toolName()));
+        detail.put("toolName", request.toolName());
+        detail.put("operationType", request.operationType());
+        detail.put("operationParams", snapshot.operationParams());
+        detail.put("currentState", snapshot.detailState());
+        detail.put("financialImpact", Map.of("totalCost", snapshot.totalCost()));
         return detail;
     }
 
@@ -199,6 +245,74 @@ public class ApprovalPayloadBuilder {
         return params;
     }
 
+    private PurchaseOrderCreateSnapshot purchaseOrderCreateSnapshot(Map<String, Object> operationParams) {
+        Long supplierId = requireLongParam(operationParams, "supplierId");
+        Supplier supplier = requireSupplier(supplierId);
+        Set<Long> seenProductIds = new HashSet<>();
+
+        List<PurchaseOrderCreateItemSnapshot> items = requireItemParams(operationParams).stream()
+                .map(item -> purchaseOrderCreateItemState(item, seenProductIds))
+                .toList();
+        BigDecimal totalCost = items.stream()
+                .map(PurchaseOrderCreateItemSnapshot::subtotal)
+                .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+
+        Map<String, Object> normalizedParams = new LinkedHashMap<>();
+        normalizedParams.put("supplierId", supplierId);
+        normalizedParams.put("items", items.stream()
+                .map(PurchaseOrderCreateItemSnapshot::operationParams)
+                .toList());
+
+        Map<String, Object> payloadState = new LinkedHashMap<>();
+        payloadState.put("supplier", supplierPayloadState(supplier));
+        payloadState.put("items", items.stream()
+                .map(PurchaseOrderCreateItemSnapshot::payloadState)
+                .toList());
+        payloadState.put("totalCost", totalCost);
+
+        Map<String, Object> detailState = new LinkedHashMap<>();
+        detailState.put("supplier", supplierDetailState(supplier));
+        detailState.put("items", items.stream()
+                .map(PurchaseOrderCreateItemSnapshot::detailState)
+                .toList());
+        detailState.put("totalCost", totalCost);
+
+        return new PurchaseOrderCreateSnapshot(normalizedParams, payloadState, detailState, totalCost);
+    }
+
+    private PurchaseOrderCreateItemSnapshot purchaseOrderCreateItemState(
+            Map<String, Object> itemParams,
+            Set<Long> seenProductIds) {
+        Long productId = requireLongParam(itemParams, "productId");
+        if (!seenProductIds.add(productId)) {
+            throw new IllegalArgumentException("purchase order must not contain duplicate productId: " + productId);
+        }
+
+        Integer quantity = requirePositiveIntegerParam(itemParams, "quantity");
+        BigDecimal unitCost = requireMoneyParam(itemParams, "unitCost");
+        BigDecimal subtotal = unitCost.multiply(BigDecimal.valueOf(quantity)).setScale(2);
+        Product product = requireActiveProduct(productId);
+        Inventory inventory = requireInventory(productId);
+
+        Map<String, Object> operationParams = new LinkedHashMap<>();
+        operationParams.put("productId", productId);
+        operationParams.put("quantity", quantity);
+        operationParams.put("unitCost", unitCost);
+
+        Map<String, Object> payloadState = new LinkedHashMap<>();
+        payloadState.put("productId", productId);
+        payloadState.put("quantity", quantity);
+        payloadState.put("unitCost", unitCost);
+        payloadState.put("subtotal", subtotal);
+        payloadState.put("product", productPayloadState(product));
+
+        Map<String, Object> detailState = new LinkedHashMap<>(payloadState);
+        detailState.put("product", productDetailState(product));
+        detailState.put("inventory", inventoryState(inventory));
+
+        return new PurchaseOrderCreateItemSnapshot(operationParams, payloadState, detailState, subtotal);
+    }
+
     private Map<String, Object> purchaseOrderReceiveParams(Long poId) {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("poId", poId);
@@ -216,8 +330,50 @@ public class ApprovalPayloadBuilder {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("productId", item.productId());
         params.put("quantity", item.quantity());
-        params.put("unitCost", item.unitCost());
+        params.put("unitCost", money(item.unitCost(), "unitCost"));
         return params;
+    }
+
+    private Map<String, Object> supplierPayloadState(Supplier supplier) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("supplierId", supplier.getSupplierId());
+        return state;
+    }
+
+    private Map<String, Object> supplierDetailState(Supplier supplier) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("supplierId", supplier.getSupplierId());
+        state.put("name", supplier.getName());
+        state.put("rating", supplier.getRating());
+        state.put("leadTime", supplier.getLeadTime());
+        return state;
+    }
+
+    private Map<String, Object> productPayloadState(Product product) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("productId", product.getProductId());
+        state.put("status", product.getStatus());
+        state.put("cost", money(product.getCost(), "product.cost"));
+        return state;
+    }
+
+    private Map<String, Object> productDetailState(Product product) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("productId", product.getProductId());
+        state.put("name", product.getName());
+        state.put("category", product.getCategory());
+        state.put("status", product.getStatus());
+        state.put("cost", money(product.getCost(), "product.cost"));
+        return state;
+    }
+
+    private Map<String, Object> inventoryState(Inventory inventory) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("productId", inventory.getProductId());
+        state.put("quantity", inventory.getQuantity());
+        state.put("safetyStock", inventory.getSafetyStock());
+        state.put("warehouse", inventory.getWarehouse());
+        return state;
     }
 
     private Map<String, Object> purchaseOrderCurrentState(Long poId) {
@@ -297,6 +453,33 @@ public class ApprovalPayloadBuilder {
         return purchaseOrder;
     }
 
+    private Supplier requireSupplier(Long supplierId) {
+        Supplier supplier = supplierMapper.findById(supplierId);
+        if (supplier == null) {
+            throw new IllegalArgumentException("supplier does not exist: " + supplierId);
+        }
+        return supplier;
+    }
+
+    private Product requireActiveProduct(Long productId) {
+        Product product = productMapper.findById(productId);
+        if (product == null) {
+            throw new IllegalArgumentException("product does not exist: " + productId);
+        }
+        if (!"active".equals(product.getStatus())) {
+            throw new IllegalArgumentException("product must be active for purchase order: " + productId);
+        }
+        return product;
+    }
+
+    private Inventory requireInventory(Long productId) {
+        Inventory inventory = inventoryMapper.findByProductId(productId);
+        if (inventory == null) {
+            throw new IllegalArgumentException("inventory row does not exist for product: " + productId);
+        }
+        return inventory;
+    }
+
     private List<PurchaseOrderItem> purchaseOrderItems(Long poId) {
         List<PurchaseOrderItem> items = purchaseOrderMapper.findItemsByPoId(poId);
         if (items.isEmpty()) {
@@ -339,15 +522,69 @@ public class ApprovalPayloadBuilder {
                 || ("shipped".equals(currentStatus) && "completed".equals(newStatus));
     }
 
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> requireItemParams(Map<String, Object> params) {
+        Object value = params.get("items");
+        if (value instanceof List<?> items && !items.isEmpty()) {
+            return items.stream()
+                    .map(item -> {
+                        if (item instanceof Map<?, ?> itemMap) {
+                            return (Map<String, Object>) itemMap;
+                        }
+                        throw new IllegalArgumentException("items must contain object values");
+                    })
+                    .toList();
+        }
+        throw new IllegalArgumentException("items must not be empty");
+    }
+
     private Long requireLongParam(Map<String, Object> params, String fieldName) {
         Object value = params.get(fieldName);
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String text && !text.isBlank()) {
-            return Long.valueOf(text);
+        if (value instanceof Number || value instanceof String text && !text.isBlank()) {
+            try {
+                long longValue = new BigDecimal(value.toString()).longValueExact();
+                if (longValue > 0) {
+                    return longValue;
+                }
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException(fieldName + " must be a whole number", e);
+            }
         }
         throw new IllegalArgumentException(fieldName + " must be positive");
+    }
+
+    private Integer requirePositiveIntegerParam(Map<String, Object> params, String fieldName) {
+        Object value = params.get(fieldName);
+        if (value instanceof Number || value instanceof String text && !text.isBlank()) {
+            try {
+                int intValue = new BigDecimal(value.toString()).intValueExact();
+                if (intValue > 0) {
+                    return intValue;
+                }
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException(fieldName + " must be a whole number", e);
+            }
+        }
+        throw new IllegalArgumentException(fieldName + " must be positive");
+    }
+
+    private BigDecimal requireMoneyParam(Map<String, Object> params, String fieldName) {
+        Object value = params.get(fieldName);
+        if (value instanceof Number || value instanceof String) {
+            return money(new BigDecimal(value.toString()), fieldName);
+        }
+        throw new IllegalArgumentException(fieldName + " must be positive");
+    }
+
+    private BigDecimal money(BigDecimal value, String fieldName) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(fieldName + " must be positive");
+        }
+        try {
+            return value.setScale(2, RoundingMode.UNNECESSARY);
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(fieldName + " must have at most 2 decimal places", e);
+        }
     }
 
     private String requireTextParam(Map<String, Object> params, String fieldName) {
@@ -382,5 +619,19 @@ public class ApprovalPayloadBuilder {
         } catch (JacksonException e) {
             throw new IllegalArgumentException("operation parameters must be JSON serializable", e);
         }
+    }
+
+    private record PurchaseOrderCreateSnapshot(
+            Map<String, Object> operationParams,
+            Map<String, Object> payloadState,
+            Map<String, Object> detailState,
+            BigDecimal totalCost) {
+    }
+
+    private record PurchaseOrderCreateItemSnapshot(
+            Map<String, Object> operationParams,
+            Map<String, Object> payloadState,
+            Map<String, Object> detailState,
+            BigDecimal subtotal) {
     }
 }

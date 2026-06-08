@@ -20,6 +20,18 @@ public interface InventoryMapper {
                 warehouse,
                 updated_at
             FROM inventory
+            WHERE product_id = #{productId}
+            """)
+    Inventory findByProductId(@Param("productId") Long productId);
+
+    @Select("""
+            SELECT
+                product_id,
+                quantity,
+                safety_stock,
+                warehouse,
+                updated_at
+            FROM inventory
             WHERE quantity < safety_stock
             ORDER BY (safety_stock - quantity) DESC
             LIMIT #{limit}

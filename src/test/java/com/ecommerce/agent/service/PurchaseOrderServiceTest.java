@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ecommerce.agent.approval.ApprovalPayloadBuilder;
@@ -40,6 +41,9 @@ class PurchaseOrderServiceTest {
 
     @Autowired
     private InventoryMapper inventoryMapper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void findRecentPurchaseOrdersReturnsPurchaseOrders() {
@@ -112,6 +116,64 @@ class PurchaseOrderServiceTest {
         assertThat(result.status()).isEqualTo("invalid_approval");
         assertThat(result.poId()).isNull();
         assertThat(result.approvalId()).isEqualTo(approvalId);
+    }
+
+    @Test
+    @Transactional
+    void createPurchaseOrderRejectsStaleApprovalWhenProductSnapshotChanges() {
+        PurchaseOrderCreateRequest request = createRequest(null);
+        String approvalId = approvedApprovalId(request);
+        jdbcTemplate.update("UPDATE product SET cost = cost + 0.01 WHERE product_id = ?", 2L);
+
+        PurchaseOrderCreateResult result = purchaseOrderService.createPurchaseOrder(new PurchaseOrderCreateRequest(
+                approvalId,
+                request.supplierId(),
+                request.items(),
+                request.userId(),
+                request.sessionId()));
+
+        assertThat(result.status()).isEqualTo("invalid_approval");
+        assertThat(result.poId()).isNull();
+        assertThat(result.approvalId()).isEqualTo(approvalId);
+    }
+
+    @Test
+    @Transactional
+    void createPurchaseOrderAllowsApprovalWhenInventoryQuantityChanges() {
+        PurchaseOrderCreateRequest request = createRequest(null);
+        String approvalId = approvedApprovalId(request);
+        jdbcTemplate.update("UPDATE inventory SET quantity = quantity + 1 WHERE product_id = ?", 2L);
+
+        PurchaseOrderCreateResult result = purchaseOrderService.createPurchaseOrder(new PurchaseOrderCreateRequest(
+                approvalId,
+                request.supplierId(),
+                request.items(),
+                request.userId(),
+                request.sessionId()));
+
+        assertThat(result.status()).isEqualTo("created");
+        assertThat(result.poId()).isNotNull();
+        assertThat(result.approvalId()).isEqualTo(approvalId);
+    }
+
+    @Test
+    @Transactional
+    void createPurchaseOrderRejectsInactiveProductBeforeConsumingApproval() {
+        PurchaseOrderCreateRequest request = createRequest(null);
+        String approvalId = approvedApprovalId(request);
+        jdbcTemplate.update("UPDATE product SET status = 'inactive' WHERE product_id = ?", 2L);
+
+        PurchaseOrderCreateResult result = purchaseOrderService.createPurchaseOrder(new PurchaseOrderCreateRequest(
+                approvalId,
+                request.supplierId(),
+                request.items(),
+                request.userId(),
+                request.sessionId()));
+
+        assertThat(result.status()).isEqualTo("not_creatable");
+        assertThat(result.poId()).isNull();
+        assertThat(result.approvalId()).isEqualTo(approvalId);
+        assertThat(result.message()).isEqualTo("product must be active for purchase order: 2");
     }
 
     @Test

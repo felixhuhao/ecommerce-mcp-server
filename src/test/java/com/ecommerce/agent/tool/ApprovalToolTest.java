@@ -54,8 +54,18 @@ class ApprovalToolTest {
         assertThat(response.status()).isEqualTo("pending");
         assertThat(json(response.operationPayload()).get("operationParams").get("supplierId").asInt())
                 .isEqualTo(1);
+        assertThat(json(response.operationPayload()).get("currentState").get("supplier").get("supplierId").asInt())
+                .isEqualTo(1);
+        assertThat(json(response.operationPayload()).get("currentState").get("items").get(0).get("product").get("status").asString())
+                .isEqualTo("active");
+        assertThat(json(response.operationPayload()).get("currentState").get("items").get(0).has("inventory"))
+                .isFalse();
+        assertThat(json(response.operationPayload()).get("currentState").get("totalCost").decimalValue())
+                .isEqualByComparingTo("625.00");
         assertThat(json(response.operationDetail()).get("title").asString())
                 .isEqualTo("Create purchase order");
+        assertThat(json(response.operationDetail()).get("currentState").get("items").get(0).get("inventory").get("quantity").isNumber())
+                .isTrue();
     }
 
     @Test
@@ -76,6 +86,22 @@ class ApprovalToolTest {
                 Map.of("supplierId", 1))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("purchase_order_create operationType must be create");
+    }
+
+    @Test
+    void requestApprovalRejectsDuplicatePurchaseOrderProduct() {
+        Map<String, Object> operationParams = Map.of(
+                "supplierId", 1,
+                "items", List.of(
+                        Map.of("productId", 2, "quantity", 10, "unitCost", new BigDecimal("12.50")),
+                        Map.of("productId", 2, "quantity", 5, "unitCost", new BigDecimal("12.50"))));
+
+        assertThatThrownBy(() -> trustedActorContext.runAs(1L, "test-session", () -> approvalTool.requestApproval(
+                "purchase_order_create",
+                "create",
+                operationParams)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("purchase order must not contain duplicate productId: 2");
     }
 
     private JsonNode json(String value) throws JacksonException {

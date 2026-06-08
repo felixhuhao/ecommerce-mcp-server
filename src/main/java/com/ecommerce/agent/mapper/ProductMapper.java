@@ -22,6 +22,21 @@ public interface ProductMapper {
                 created_at,
                 updated_at
             FROM product
+            WHERE product_id = #{productId}
+            """)
+    Product findById(@Param("productId") Long productId);
+
+    @Select("""
+            SELECT
+                product_id,
+                name,
+                category,
+                price,
+                cost,
+                status,
+                created_at,
+                updated_at
+            FROM product
             WHERE status = 'active'
             ORDER BY product_id
             LIMIT #{limit}

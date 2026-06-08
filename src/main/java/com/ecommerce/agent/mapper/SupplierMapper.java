@@ -22,6 +22,21 @@ public interface SupplierMapper {
                 rating,
                 lead_time
             FROM supplier
+            WHERE supplier_id = #{supplierId}
+            """)
+    Supplier findById(@Param("supplierId") Long supplierId);
+
+    @Select("""
+            SELECT
+                supplier_id,
+                name,
+                contact_person,
+                phone,
+                address,
+                email,
+                rating,
+                lead_time
+            FROM supplier
             ORDER BY rating DESC, lead_time ASC, supplier_id
             LIMIT #{limit}
             """)

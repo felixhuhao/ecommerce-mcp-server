@@ -36,6 +36,18 @@ public record PurchaseOrderCreateResult(
                 "approval_id is missing, not approved, stale, already consumed, or not bound to this operation.");
     }
 
+    public static PurchaseOrderCreateResult notCreatable(String approvalId, Long supplierId, String reason) {
+        return new PurchaseOrderCreateResult(
+                "not_creatable",
+                null,
+                supplierId,
+                null,
+                null,
+                null,
+                approvalId,
+                reason);
+    }
+
     public static PurchaseOrderCreateResult created(
             Long poId,
             Long supplierId,

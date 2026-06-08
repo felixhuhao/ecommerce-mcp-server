@@ -225,7 +225,7 @@ Agent calls request_approval(tool_name, operation_params)   ← structured param
   → ApprovalService resolves trusted {user_id, session_id} from request metadata
   → ApprovalService reads the live DB rows needed to evaluate the operation
   → builds canonical operation_payload = operation_params + server-derived preconditions/snapshot
-    (e.g. current order/PO status, expected inventory quantity, expected supplier/product/unit cost)
+    (e.g. current order/PO status, supplier/product existence, product active status/cost, normalized unit cost)
   → computes operation_hash from that canonical operation_payload (§4.3)
   → DERIVES the human-facing card (summary / diff / impact) from the canonical payload + DB state
     (e.g. resolves product names, current inventory, supplier, computed total_cost)
@@ -245,9 +245,11 @@ parameters; Java renders the approval card from those parameters and live DB sta
 the gap where an Agent could display "receive 5 items" while the hashed payload receives 500 —
 the card and the hash are derived from the *same* server-side payload.
 
-**State freshness:** the approval also pins the DB facts used to render the card. If an order,
-PO, supplier, product cost, or inventory row changes between approval creation and the resumed
-write, the write tool must reject with a stale-approval error and require a new approval.
+**State freshness:** the approval pins the DB facts that are required to authorize the write,
+not every field shown on the card. If an order/PO state or product cost/status changes between
+approval creation and the resumed write, the write tool must reject with a stale-approval error
+and require a new approval. Volatile display-only fields, such as current inventory quantity on
+`purchase_order_create`, can remain in `operation_detail` without entering the hashed payload.
 
 ### 4.3 Enforcement Contract (required checks)
 

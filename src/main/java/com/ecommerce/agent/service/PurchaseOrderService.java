@@ -54,10 +54,20 @@ public class PurchaseOrderService {
         }
 
         ApprovalRequest approvalRequest = approvalPayloadBuilder.purchaseOrderCreateApprovalRequest(request);
+        String operationPayload;
+        try {
+            operationPayload = approvalPayloadBuilder.operationPayloadJson(approvalRequest);
+        } catch (IllegalArgumentException e) {
+            return PurchaseOrderCreateResult.notCreatable(
+                    request.approvalId(),
+                    request.supplierId(),
+                    e.getMessage());
+        }
+
         boolean consumed = approvalService.consumeApproved(
                 request.approvalId(),
                 ApprovalPayloadBuilder.PURCHASE_ORDER_CREATE_TOOL,
-                approvalPayloadBuilder.operationPayloadJson(approvalRequest),
+                operationPayload,
                 request.userId(),
                 request.sessionId());
 
