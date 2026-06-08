@@ -149,9 +149,7 @@ served here — they belong to the ModelScope and Python MCP servers (see parent
 | purchase_order_receive | Write | PurchaseOrderService.receive | Mark a PO received → increment inventory (requires approval_id) |
 | order_update | Write | OrderService.update | Update a customer order's fulfillment status (requires approval_id) |
 | request_approval | Write | ApprovalService.create | Take structured operation params; Java builds the canonical authorization payload (params + server preconditions), hashes it, derives the human-facing card server-side, stores a pending record, returns approval_id |
-
-Planned post-core read tool: `get_statistics` (`StatsService.get`) for aggregation-first
-analytics once the parent Agent needs it.
+| get_statistics | Read | StatsService.get | Return aggregation-first overview stats for orders, inventory, products, purchase orders, and top-selling products |
 
 **Post-MVP write tools** (documented so the approval framework anticipates them, not built yet):
 `order_cancel` (High-risk batch — "cancel pending orders >30 days") and any delete tool, both
@@ -354,7 +352,7 @@ separately because the caller lives in the parent/Python project.
 - [x] Core read-only tools: `product_query`, `product_search`, `order_query`, `inventory_query`,
       `inventory_low_stock`, `user_query`, `supplier_query`, `supplier_top`,
       `purchase_order_query` (with pagination/limit defaults + caps where applicable, §3.0)
-- [ ] `get_statistics` aggregations (whatever the analyst sub-agent needs)
+- [x] `get_statistics` aggregations for inventory, orders, products, purchase orders, and top sellers
 - [x] `request_approval` → build canonical payload (params + server preconditions), hash it,
       **render the card server-side**, create pending `approval_record` (tool/actor/session binding)
 - [x] Authenticated approve/reject/read endpoints (§4.4) — `controller/`, not MCP tools
