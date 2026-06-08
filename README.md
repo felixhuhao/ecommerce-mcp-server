@@ -128,6 +128,44 @@ X-Session-Id: local-session
 
 The `TrustedActorFilter` derives the actor from these headers. Tool parameters never accept `userId` or `sessionId` directly.
 
+## Run With Docker
+
+The Docker setup runs only the Spring Boot app. It assumes MySQL is already running and already seeded.
+
+```bash
+chmod +x scripts/docker-run.sh
+./scripts/docker-run.sh
+```
+
+The script builds `ecommerce-mcp-server:local`, removes any existing container named
+`ecommerce-mcp-server`, then starts the app on port `8080`.
+
+By default the container connects to MySQL through:
+
+```text
+host.docker.internal:3306/ecommerce_db
+```
+
+You can override these values:
+
+```bash
+MYSQL_HOST=host.docker.internal \
+MYSQL_PORT=3306 \
+MYSQL_DATABASE=ecommerce_db \
+APP_PORT=8080 \
+./scripts/docker-run.sh
+```
+
+Required secrets still come from `.env.properties` or the environment:
+
+```properties
+DB_USERNAME=your_mysql_user
+DB_PASSWORD=your_mysql_password
+APP_SERVICE_TOKEN=dev-service-token
+```
+
+The Docker app runtime does not run `schema.sql` or `data.sql`; database setup remains manual or test-only.
+
 ## Approval Flow
 
 1. Agent calls `request_approval` with a write tool name and structured operation params.
@@ -177,6 +215,7 @@ src/main/java/com/ecommerce/agent/
 ```bash
 ./mvnw test
 ./mvnw spring-boot:run
+./scripts/docker-run.sh
 git status --short
 ```
 
