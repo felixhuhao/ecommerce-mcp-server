@@ -16,6 +16,7 @@ import com.ecommerce.agent.dto.ApprovalDecisionResponse;
 import com.ecommerce.agent.dto.ApprovalRejectRequest;
 import com.ecommerce.agent.dto.ApprovalResponse;
 import com.ecommerce.agent.service.ApprovalService;
+import com.ecommerce.agent.service.ApprovalService.ApprovalRejectionResult;
 
 @RestController
 @RequestMapping("/approvals")
@@ -43,7 +44,7 @@ public class ApprovalController {
     public ResponseEntity<ApprovalDecisionResponse> approve(@PathVariable String approvalId) {
         TrustedActor actor = trustedActorContext.requireCurrentActor();
         boolean changed = approvalService.approve(approvalId, actor.userId(), actor.sessionId());
-        return decisionResponse(approvalId, "approved", changed);
+        return decisionResponse(approvalId, "approved", changed, null);
     }
 
     @PostMapping("/{approvalId}/reject")
@@ -51,15 +52,21 @@ public class ApprovalController {
             @PathVariable String approvalId,
             @RequestBody(required = false) ApprovalRejectRequest request) {
         TrustedActor actor = trustedActorContext.requireCurrentActor();
-        boolean changed = approvalService.reject(approvalId, actor.userId(), actor.sessionId());
-        return decisionResponse(approvalId, "rejected", changed);
+        String rejectionReason = request == null ? null : request.reason();
+        ApprovalRejectionResult result = approvalService.reject(
+                approvalId,
+                actor.userId(),
+                actor.sessionId(),
+                rejectionReason);
+        return decisionResponse(approvalId, "rejected", result.changed(), result.rejectionReason());
     }
 
     private ResponseEntity<ApprovalDecisionResponse> decisionResponse(
             String approvalId,
             String status,
-            boolean changed) {
-        ApprovalDecisionResponse response = new ApprovalDecisionResponse(approvalId, status, changed);
+            boolean changed,
+            String rejectionReason) {
+        ApprovalDecisionResponse response = new ApprovalDecisionResponse(approvalId, status, changed, rejectionReason);
         if (changed) {
             return ResponseEntity.ok(response);
         }

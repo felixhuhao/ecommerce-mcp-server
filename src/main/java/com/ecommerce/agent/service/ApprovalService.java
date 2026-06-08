@@ -95,9 +95,15 @@ public class ApprovalService {
         return approvalRecordMapper.approvePending(approvalId, userId, sessionId) == 1;
     }
 
-    public boolean reject(String approvalId, Long userId, String sessionId) {
+    public ApprovalRejectionResult reject(String approvalId, Long userId, String sessionId, String rejectionReason) {
         validateTransitionRequest(approvalId, userId, sessionId);
-        return approvalRecordMapper.rejectPending(approvalId, userId, sessionId) == 1;
+        String normalizedRejectionReason = normalizeOptionalText(rejectionReason);
+        boolean changed = approvalRecordMapper.rejectPending(
+                approvalId,
+                userId,
+                sessionId,
+                normalizedRejectionReason) == 1;
+        return new ApprovalRejectionResult(changed, changed ? normalizedRejectionReason : null);
     }
 
     public boolean consumeApproved(
@@ -150,6 +156,13 @@ public class ApprovalService {
         }
     }
 
+    private String normalizeOptionalText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
     private String canonicalizeJson(String json) {
         try {
             JsonNode root = objectMapper.readTree(json);
@@ -191,5 +204,8 @@ public class ApprovalService {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is not available", e);
         }
+    }
+
+    public record ApprovalRejectionResult(boolean changed, String rejectionReason) {
     }
 }

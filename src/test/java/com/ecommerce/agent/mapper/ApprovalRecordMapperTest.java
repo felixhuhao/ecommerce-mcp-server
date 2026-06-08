@@ -39,6 +39,8 @@ class ApprovalRecordMapperTest {
         assertThat(found.getToolName()).isEqualTo("purchase_order_create");
         assertThat(json(found.getOperationPayload()))
                 .isEqualTo(json("{\"productId\":1,\"quantity\":10}"));
+        assertThat(found.getRejectionReason()).isNull();
+        assertThat(found.getRejectedAt()).isNull();
         assertThat(found.getCreatedAt()).isNotNull();
     }
 
@@ -89,6 +91,24 @@ class ApprovalRecordMapperTest {
         assertThat(secondConsumedRows).isZero();
         assertThat(found.getStatus()).isEqualTo("consumed");
         assertThat(found.getConsumedAt()).isNotNull();
+    }
+
+    @Test
+    void rejectPendingStoresReasonAndRejectTime() {
+        ApprovalRecord approvalRecord = newApprovalRecord();
+        approvalRecordMapper.insert(approvalRecord);
+
+        int rejectedRows = approvalRecordMapper.rejectPending(
+                approvalRecord.getApprovalId(),
+                approvalRecord.getUserId(),
+                approvalRecord.getSessionId(),
+                "Duplicate request");
+
+        ApprovalRecord found = approvalRecordMapper.findById(approvalRecord.getApprovalId());
+        assertThat(rejectedRows).isEqualTo(1);
+        assertThat(found.getStatus()).isEqualTo("rejected");
+        assertThat(found.getRejectionReason()).isEqualTo("Duplicate request");
+        assertThat(found.getRejectedAt()).isNotNull();
     }
 
     private ApprovalRecord newApprovalRecord() {

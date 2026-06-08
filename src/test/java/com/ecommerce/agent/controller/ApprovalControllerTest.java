@@ -1,6 +1,7 @@
 package com.ecommerce.agent.controller;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -79,11 +80,30 @@ class ApprovalControllerTest {
                 .header("X-User-Id", "1")
                 .header("X-Session-Id", "test-session")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"reason\":\"Not needed\"}"))
+                .content("{\"reason\":\"  Not needed  \"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.approvalId").value(approvalRecord.getApprovalId()))
                 .andExpect(jsonPath("$.status").value("rejected"))
-                .andExpect(jsonPath("$.changed").value(true));
+                .andExpect(jsonPath("$.changed").value(true))
+                .andExpect(jsonPath("$.rejectionReason").value("Not needed"));
+
+        mockMvc.perform(post("/approvals/{approvalId}/reject", approvalRecord.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
+                .header("X-User-Id", "1")
+                .header("X-Session-Id", "test-session")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"Second reason\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.changed").value(false))
+                .andExpect(jsonPath("$.rejectionReason").value(nullValue()));
+
+        mockMvc.perform(get("/approvals/{approvalId}", approvalRecord.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
+                .header("X-User-Id", "1")
+                .header("X-Session-Id", "test-session"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("rejected"))
+                .andExpect(jsonPath("$.rejectionReason").value("Not needed"));
     }
 
     @Test

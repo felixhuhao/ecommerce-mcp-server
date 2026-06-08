@@ -22,8 +22,10 @@ public interface ApprovalRecordMapper {
                 user_id,
                 session_id,
                 status,
+                rejection_reason,
                 created_at,
                 expires_at,
+                rejected_at,
                 consumed_at
             FROM approval_record
             WHERE approval_id = #{approvalId}
@@ -76,7 +78,9 @@ public interface ApprovalRecordMapper {
 
     @Update("""
             UPDATE approval_record
-            SET status = 'rejected'
+            SET status = 'rejected',
+                rejection_reason = #{rejectionReason},
+                rejected_at = NOW()
             WHERE approval_id = #{approvalId}
             AND user_id = #{userId}
             AND session_id = #{sessionId}
@@ -86,7 +90,8 @@ public interface ApprovalRecordMapper {
     int rejectPending(
             @Param("approvalId") String approvalId,
             @Param("userId") Long userId,
-            @Param("sessionId") String sessionId);
+            @Param("sessionId") String sessionId,
+            @Param("rejectionReason") String rejectionReason);
 
     @Update("""
             UPDATE approval_record

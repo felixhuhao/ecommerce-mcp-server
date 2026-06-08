@@ -106,8 +106,10 @@ CREATE TABLE approval_record (
   user_id        BIGINT NOT NULL,                -- actor the approval is bound to
   session_id     VARCHAR(64) NOT NULL,           -- session the approval is bound to
   status         VARCHAR(10) NOT NULL DEFAULT 'pending',  -- pending | approved | consumed | rejected | expired
+  rejection_reason TEXT NULL,                    -- human-supplied reason when rejected
   created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at     DATETIME NOT NULL,
+  rejected_at    DATETIME NULL,                  -- set when rejected
   consumed_at    DATETIME NULL,                  -- set when the write executes (one-time use)
   KEY idx_status (status)
 );
@@ -287,7 +289,7 @@ must never be able to approve its own request — only a human (via the frontend
 
 ```
 POST /approvals/{approval_id}/approve     (auth required)
-POST /approvals/{approval_id}/reject      body: { reason }   (auth required)
+POST /approvals/{approval_id}/reject      body: { reason }   (auth required; reason is persisted)
 ```
 
 Contract:
