@@ -140,7 +140,9 @@ class ApprovalControllerTest {
                 .andExpect(jsonPath("$.approvalId").value(approvalRecord.getApprovalId()))
                 .andExpect(jsonPath("$.status").value("consumed"))
                 .andExpect(jsonPath("$.executionResult.status").value("created"))
-                .andExpect(jsonPath("$.executionResult.poId").isNumber());
+                .andExpect(jsonPath("$.executionResult.poId").isNumber())
+                .andExpect(jsonPath("$.reasonCode").doesNotExist())
+                .andExpect(jsonPath("$.retryable").doesNotExist());
     }
 
     @Test
