@@ -350,7 +350,7 @@ CREATE TABLE `approval_record` (
   `operation_detail` JSON NOT NULL COMMENT '服务端渲染的人类审批详情',
   `user_id` BIGINT NOT NULL COMMENT '绑定的用户ID',
   `session_id` VARCHAR(64) NOT NULL COMMENT '绑定的会话ID',
-  `status` VARCHAR(10) NOT NULL DEFAULT 'pending' COMMENT '状态: pending/approved/rejected/expired/consumed',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态: pending/approved/rejected/expired/consumed/invalidated/failed',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `expires_at` DATETIME NOT NULL COMMENT '过期时间',
   `consumed_at` DATETIME DEFAULT NULL COMMENT '消费时间',

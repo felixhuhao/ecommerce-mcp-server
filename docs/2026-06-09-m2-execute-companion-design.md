@@ -45,6 +45,7 @@ existing binding/audit columns are unchanged.
 
 ```sql
 ALTER TABLE approval_record
+  MODIFY status VARCHAR(20) NOT NULL DEFAULT 'pending',
   ADD COLUMN execution_result JSON NULL,        -- deterministic result of the executed write (PO id, new status, inventory delta, ...)
   ADD COLUMN executed_at      DATETIME NULL;     -- set when execution completes (success or failed)
 ```
