@@ -6,13 +6,6 @@ import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
-import com.ecommerce.agent.auth.TrustedActor;
-import com.ecommerce.agent.auth.TrustedActorContext;
-import com.ecommerce.agent.dto.PurchaseOrderCreateItemRequest;
-import com.ecommerce.agent.dto.PurchaseOrderCreateRequest;
-import com.ecommerce.agent.dto.PurchaseOrderCreateResult;
-import com.ecommerce.agent.dto.PurchaseOrderReceiveRequest;
-import com.ecommerce.agent.dto.PurchaseOrderReceiveResult;
 import com.ecommerce.agent.dto.PurchaseOrderResult;
 import com.ecommerce.agent.service.PurchaseOrderService;
 
@@ -20,11 +13,9 @@ import com.ecommerce.agent.service.PurchaseOrderService;
 public class PurchaseOrderTool {
 
     private final PurchaseOrderService purchaseOrderService;
-    private final TrustedActorContext trustedActorContext;
 
-    public PurchaseOrderTool(PurchaseOrderService purchaseOrderService, TrustedActorContext trustedActorContext) {
+    public PurchaseOrderTool(PurchaseOrderService purchaseOrderService) {
         this.purchaseOrderService = purchaseOrderService;
-        this.trustedActorContext = trustedActorContext;
     }
 
     @McpTool(name = "purchase_order_query", description = "Query recent supplier purchase orders")
@@ -34,31 +25,5 @@ public class PurchaseOrderTool {
                 .stream()
                 .map(PurchaseOrderResult::from)
                 .toList();
-    }
-
-    @McpTool(name = "purchase_order_create", description = "Create a supplier purchase order after human approval.")
-    public PurchaseOrderCreateResult purchaseOrderCreate(
-            @McpToolParam(required = false, description = "Approval id returned by request_approval.") String approvalId,
-            @McpToolParam(description = "Supplier id for the purchase order.") Long supplierId,
-            @McpToolParam(description = "Purchase order line items.") List<PurchaseOrderCreateItemRequest> items) {
-        TrustedActor actor = trustedActorContext.requireCurrentActor();
-        return purchaseOrderService.createPurchaseOrder(new PurchaseOrderCreateRequest(
-                approvalId,
-                supplierId,
-                items,
-                actor.userId(),
-                actor.sessionId()));
-    }
-
-    @McpTool(name = "purchase_order_receive", description = "Receive a placed supplier purchase order after human approval.")
-    public PurchaseOrderReceiveResult purchaseOrderReceive(
-            @McpToolParam(required = false, description = "Approval id returned by request_approval.") String approvalId,
-            @McpToolParam(description = "Purchase order id to receive.") Long poId) {
-        TrustedActor actor = trustedActorContext.requireCurrentActor();
-        return purchaseOrderService.receivePurchaseOrder(new PurchaseOrderReceiveRequest(
-                approvalId,
-                poId,
-                actor.userId(),
-                actor.sessionId()));
     }
 }

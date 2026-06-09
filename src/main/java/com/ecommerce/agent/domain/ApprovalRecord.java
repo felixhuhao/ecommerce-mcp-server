@@ -22,8 +22,10 @@ public class ApprovalRecord {
     private String sessionId;
     private String status;
     private String rejectionReason;
+    private String executionResult;
     private LocalDateTime createdAt;
     private LocalDateTime expiresAt;
     private LocalDateTime rejectedAt;
     private LocalDateTime consumedAt;
+    private LocalDateTime executedAt;
 }

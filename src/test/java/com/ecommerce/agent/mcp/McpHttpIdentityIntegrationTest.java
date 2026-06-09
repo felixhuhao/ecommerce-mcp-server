@@ -124,6 +124,37 @@ class McpHttpIdentityIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(401);
     }
 
+    @Test
+    void mcpToolListExcludesBackendExecutedWriteTools() throws Exception {
+        String mcpSessionId = initializeMcpSession();
+        sendInitializedNotification(mcpSessionId);
+
+        String responseBody = postJson(
+                """
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 2,
+                          "method": "tools/list"
+                        }
+                        """,
+                mcpSessionId,
+                200);
+
+        JsonNode jsonRpcResponse = objectMapper.readTree(firstSseData(responseBody));
+        List<String> toolNames = new ArrayList<>();
+        jsonRpcResponse.get("result").get("tools").forEach(tool ->
+                toolNames.add(tool.get("name").asString()));
+
+        assertThat(toolNames).contains(
+                "request_approval",
+                "purchase_order_query",
+                "order_query");
+        assertThat(toolNames).doesNotContain(
+                "purchase_order_create",
+                "purchase_order_receive",
+                "order_update");
+    }
+
     private String initializeMcpSession() throws IOException, InterruptedException {
         HttpResponse<String> response = sendJson(
                 """

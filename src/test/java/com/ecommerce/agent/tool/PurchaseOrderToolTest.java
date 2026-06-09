@@ -2,40 +2,19 @@ package com.ecommerce.agent.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.transaction.annotation.Transactional;
 
-import com.ecommerce.agent.approval.ApprovalPayloadBuilder;
-import com.ecommerce.agent.auth.TrustedActorContext;
-import com.ecommerce.agent.domain.ApprovalRecord;
-import com.ecommerce.agent.dto.ApprovalRequest;
-import com.ecommerce.agent.dto.PurchaseOrderCreateItemRequest;
-import com.ecommerce.agent.dto.PurchaseOrderCreateRequest;
-import com.ecommerce.agent.dto.PurchaseOrderCreateResult;
-import com.ecommerce.agent.dto.PurchaseOrderReceiveRequest;
-import com.ecommerce.agent.dto.PurchaseOrderReceiveResult;
 import com.ecommerce.agent.dto.PurchaseOrderResult;
-import com.ecommerce.agent.service.ApprovalService;
 
 @SpringBootTest
 class PurchaseOrderToolTest {
 
     @Autowired
     private PurchaseOrderTool purchaseOrderTool;
-
-    @Autowired
-    private ApprovalService approvalService;
-
-    @Autowired
-    private ApprovalPayloadBuilder approvalPayloadBuilder;
-
-    @Autowired
-    private TrustedActorContext trustedActorContext;
 
     @Test
     void purchaseOrderQueryReturnsPurchaseOrders() {
@@ -47,122 +26,5 @@ class PurchaseOrderToolTest {
         assertThat(orders.getFirst().supplierId()).isNotNull();
         assertThat(orders.getFirst().status()).isNotBlank();
         assertThat(orders.getFirst().totalCost()).isNotNull();
-    }
-
-    @Test
-    void purchaseOrderCreateRequiresApprovalId() {
-        PurchaseOrderCreateResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderCreate(
-                null,
-                1L,
-                items()));
-
-        assertThat(result.status()).isEqualTo("approval_required");
-        assertThat(result.poId()).isNull();
-    }
-
-    @Test
-    @Transactional
-    void purchaseOrderCreateCreatesPlacedPurchaseOrderAfterApproval() {
-        PurchaseOrderCreateRequest request = createRequest(null);
-        String approvalId = approvedApprovalId(request);
-
-        PurchaseOrderCreateResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderCreate(
-                approvalId,
-                request.supplierId(),
-                request.items()));
-
-        assertThat(result.status()).isEqualTo("created");
-        assertThat(result.poId()).isNotNull();
-        assertThat(result.poStatus()).isEqualTo("placed");
-        assertThat(result.totalCost()).isEqualByComparingTo("125.00");
-        assertThat(result.itemCount()).isEqualTo(1);
-    }
-
-    @Test
-    void purchaseOrderReceiveRequiresApprovalId() {
-        PurchaseOrderReceiveResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderReceive(
-                null,
-                1L));
-
-        assertThat(result.status()).isEqualTo("approval_required");
-        assertThat(result.poId()).isNull();
-    }
-
-    @Test
-    @Transactional
-    void purchaseOrderReceiveReceivesPlacedPurchaseOrderAfterApproval() {
-        PurchaseOrderCreateResult created = createPlacedPurchaseOrder();
-        PurchaseOrderReceiveRequest request = receiveRequest(null, created.poId());
-        String approvalId = approvedReceiveApprovalId(request);
-
-        PurchaseOrderReceiveResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderReceive(
-                approvalId,
-                created.poId()));
-
-        assertThat(result.status()).isEqualTo("received");
-        assertThat(result.poId()).isEqualTo(created.poId());
-        assertThat(result.itemCount()).isEqualTo(1);
-    }
-
-    private String approvedApprovalId(PurchaseOrderCreateRequest request) {
-        ApprovalRequest approvalRequest = approvalPayloadBuilder.purchaseOrderCreateApprovalRequest(request);
-        ApprovalRecord approvalRecord = approvalService.createPending(
-                approvalRequest.toolName(),
-                approvalRequest.operationType(),
-                approvalPayloadBuilder.operationPayloadJson(approvalRequest),
-                approvalPayloadBuilder.operationDetailJson(approvalRequest),
-                approvalRequest.userId(),
-                approvalRequest.sessionId());
-
-        assertThat(approvalService.approve(approvalRecord.getApprovalId(), request.userId(), request.sessionId()))
-                .isTrue();
-        return approvalRecord.getApprovalId();
-    }
-
-    private String approvedReceiveApprovalId(PurchaseOrderReceiveRequest request) {
-        ApprovalRequest approvalRequest = approvalPayloadBuilder.purchaseOrderReceiveApprovalRequest(request);
-        ApprovalRecord approvalRecord = approvalService.createPending(
-                approvalRequest.toolName(),
-                approvalRequest.operationType(),
-                approvalPayloadBuilder.operationPayloadJson(approvalRequest),
-                approvalPayloadBuilder.operationDetailJson(approvalRequest),
-                approvalRequest.userId(),
-                approvalRequest.sessionId());
-
-        assertThat(approvalService.approve(approvalRecord.getApprovalId(), request.userId(), request.sessionId()))
-                .isTrue();
-        return approvalRecord.getApprovalId();
-    }
-
-    private PurchaseOrderCreateResult createPlacedPurchaseOrder() {
-        PurchaseOrderCreateRequest request = createRequest(null);
-        String approvalId = approvedApprovalId(request);
-        PurchaseOrderCreateResult result = trustedActorContext.runAs(1L, "test-session", () -> purchaseOrderTool.purchaseOrderCreate(
-                approvalId,
-                request.supplierId(),
-                request.items()));
-        assertThat(result.status()).isEqualTo("created");
-        return result;
-    }
-
-    private PurchaseOrderCreateRequest createRequest(String approvalId) {
-        return new PurchaseOrderCreateRequest(
-                approvalId,
-                1L,
-                items(),
-                1L,
-                "test-session");
-    }
-
-    private List<PurchaseOrderCreateItemRequest> items() {
-        return List.of(new PurchaseOrderCreateItemRequest(2L, 10, new BigDecimal("12.50")));
-    }
-
-    private PurchaseOrderReceiveRequest receiveRequest(String approvalId, Long poId) {
-        return new PurchaseOrderReceiveRequest(
-                approvalId,
-                poId,
-                1L,
-                "test-session");
     }
 }

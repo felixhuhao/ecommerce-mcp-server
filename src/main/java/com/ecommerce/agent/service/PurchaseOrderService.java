@@ -6,10 +6,8 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.ecommerce.agent.approval.ApprovalPayloadBuilder;
 import com.ecommerce.agent.domain.PurchaseOrder;
 import com.ecommerce.agent.domain.PurchaseOrderItem;
-import com.ecommerce.agent.dto.ApprovalRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateItemRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateRequest;
 import com.ecommerce.agent.dto.PurchaseOrderCreateResult;
@@ -27,18 +25,12 @@ public class PurchaseOrderService {
 
     private final PurchaseOrderMapper purchaseOrderMapper;
     private final InventoryMapper inventoryMapper;
-    private final ApprovalService approvalService;
-    private final ApprovalPayloadBuilder approvalPayloadBuilder;
 
     public PurchaseOrderService(
             PurchaseOrderMapper purchaseOrderMapper,
-            InventoryMapper inventoryMapper,
-            ApprovalService approvalService,
-            ApprovalPayloadBuilder approvalPayloadBuilder) {
+            InventoryMapper inventoryMapper) {
         this.purchaseOrderMapper = purchaseOrderMapper;
         this.inventoryMapper = inventoryMapper;
-        this.approvalService = approvalService;
-        this.approvalPayloadBuilder = approvalPayloadBuilder;
     }
 
     public List<PurchaseOrder> findRecentPurchaseOrders(Integer limit) {
@@ -46,34 +38,9 @@ public class PurchaseOrderService {
     }
 
     @Transactional
-    public PurchaseOrderCreateResult createPurchaseOrder(PurchaseOrderCreateRequest request) {
+    public PurchaseOrderCreateResult createPurchaseOrderFromApproval(PurchaseOrderCreateRequest request) {
         validateCreateRequest(request);
-
-        if (request.approvalId() == null || request.approvalId().isBlank()) {
-            return PurchaseOrderCreateResult.approvalRequired();
-        }
-
-        ApprovalRequest approvalRequest = approvalPayloadBuilder.purchaseOrderCreateApprovalRequest(request);
-        String operationPayload;
-        try {
-            operationPayload = approvalPayloadBuilder.operationPayloadJson(approvalRequest);
-        } catch (IllegalArgumentException e) {
-            return PurchaseOrderCreateResult.notCreatable(
-                    request.approvalId(),
-                    request.supplierId(),
-                    e.getMessage());
-        }
-
-        boolean consumed = approvalService.consumeApproved(
-                request.approvalId(),
-                ApprovalPayloadBuilder.PURCHASE_ORDER_CREATE_TOOL,
-                operationPayload,
-                request.userId(),
-                request.sessionId());
-
-        if (!consumed) {
-            return PurchaseOrderCreateResult.invalidApproval(request.approvalId());
-        }
+        validateApprovalId(request.approvalId());
 
         PurchaseOrder purchaseOrder = new PurchaseOrder();
         purchaseOrder.setSupplierId(request.supplierId());
@@ -94,32 +61,12 @@ public class PurchaseOrderService {
     }
 
     @Transactional
-    public PurchaseOrderReceiveResult receivePurchaseOrder(PurchaseOrderReceiveRequest request) {
+    public PurchaseOrderReceiveResult receivePurchaseOrderFromApproval(PurchaseOrderReceiveRequest request) {
         validateReceiveRequest(request);
-
-        if (request.approvalId() == null || request.approvalId().isBlank()) {
-            return PurchaseOrderReceiveResult.approvalRequired();
-        }
-
-        ApprovalRequest approvalRequest = approvalPayloadBuilder.purchaseOrderReceiveApprovalRequest(request);
-        String operationPayload;
-        List<PurchaseOrderItem> items;
-        try {
-            operationPayload = approvalPayloadBuilder.operationPayloadJson(approvalRequest);
-            items = purchaseOrderMapper.findItemsByPoId(request.poId());
-        } catch (IllegalArgumentException e) {
-            return PurchaseOrderReceiveResult.notReceivable(request.approvalId(), request.poId(), e.getMessage());
-        }
-
-        boolean consumed = approvalService.consumeApproved(
-                request.approvalId(),
-                ApprovalPayloadBuilder.PURCHASE_ORDER_RECEIVE_TOOL,
-                operationPayload,
-                request.userId(),
-                request.sessionId());
-
-        if (!consumed) {
-            return PurchaseOrderReceiveResult.invalidApproval(request.approvalId());
+        validateApprovalId(request.approvalId());
+        List<PurchaseOrderItem> items = purchaseOrderMapper.findItemsByPoId(request.poId());
+        if (items.isEmpty()) {
+            throw new IllegalStateException("purchase order has no items: " + request.poId());
         }
 
         int purchaseOrderRows = purchaseOrderMapper.markReceivedIfPlaced(request.poId());
@@ -172,6 +119,12 @@ public class PurchaseOrderService {
         }
         if (request.sessionId() == null || request.sessionId().isBlank()) {
             throw new IllegalArgumentException("sessionId must not be blank");
+        }
+    }
+
+    private void validateApprovalId(String approvalId) {
+        if (approvalId == null || approvalId.isBlank()) {
+            throw new IllegalArgumentException("approvalId must not be blank");
         }
     }
 

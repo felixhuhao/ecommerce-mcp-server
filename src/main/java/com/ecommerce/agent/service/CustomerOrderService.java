@@ -8,10 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.ecommerce.agent.approval.ApprovalPayloadBuilder;
 import com.ecommerce.agent.domain.CustomerOrder;
 import com.ecommerce.agent.domain.OrderItem;
-import com.ecommerce.agent.dto.ApprovalRequest;
 import com.ecommerce.agent.dto.OrderUpdateRequest;
 import com.ecommerce.agent.dto.OrderUpdateResult;
 import com.ecommerce.agent.mapper.CustomerOrderMapper;
@@ -25,18 +23,12 @@ public class CustomerOrderService {
 
     private final CustomerOrderMapper customerOrderMapper;
     private final OrderItemMapper orderItemMapper;
-    private final ApprovalService approvalService;
-    private final ApprovalPayloadBuilder approvalPayloadBuilder;
 
     public CustomerOrderService(
             CustomerOrderMapper customerOrderMapper,
-            OrderItemMapper orderItemMapper,
-            ApprovalService approvalService,
-            ApprovalPayloadBuilder approvalPayloadBuilder) {
+            OrderItemMapper orderItemMapper) {
         this.customerOrderMapper = customerOrderMapper;
         this.orderItemMapper = orderItemMapper;
-        this.approvalService = approvalService;
-        this.approvalPayloadBuilder = approvalPayloadBuilder;
     }
 
     public List<CustomerOrderWithItems> queryOrders(Long userId, String status, Integer limit) {
@@ -61,46 +53,16 @@ public class CustomerOrderService {
     }
 
     @Transactional
-    public OrderUpdateResult updateOrder(OrderUpdateRequest request) {
+    public OrderUpdateResult updateOrderFromApproval(OrderUpdateRequest request) {
         validateUpdateRequest(request);
-
-        if (request.approvalId() == null || request.approvalId().isBlank()) {
-            return OrderUpdateResult.approvalRequired();
-        }
+        validateApprovalId(request.approvalId());
 
         CustomerOrder order = customerOrderMapper.selectById(request.orderId());
         if (order == null) {
-            return OrderUpdateResult.notUpdatable(
-                    request.approvalId(),
-                    request.orderId(),
-                    "customer order does not exist: " + request.orderId());
+            throw new IllegalStateException("customer order does not exist: " + request.orderId());
         }
 
         String newStatus = normalizeStatus(request.newStatus());
-        ApprovalRequest approvalRequest = approvalPayloadBuilder.orderUpdateApprovalRequest(new OrderUpdateRequest(
-                request.approvalId(),
-                request.orderId(),
-                newStatus,
-                request.userId(),
-                request.sessionId()));
-        String operationPayload;
-        try {
-            operationPayload = approvalPayloadBuilder.operationPayloadJson(approvalRequest);
-        } catch (IllegalArgumentException e) {
-            return OrderUpdateResult.notUpdatable(request.approvalId(), request.orderId(), e.getMessage());
-        }
-
-        boolean consumed = approvalService.consumeApproved(
-                request.approvalId(),
-                ApprovalPayloadBuilder.ORDER_UPDATE_TOOL,
-                operationPayload,
-                request.userId(),
-                request.sessionId());
-
-        if (!consumed) {
-            return OrderUpdateResult.invalidApproval(request.approvalId());
-        }
-
         int updatedRows = customerOrderMapper.updateStatusIfCurrent(
                 request.orderId(),
                 order.getStatus(),
@@ -114,6 +76,12 @@ public class CustomerOrderService {
                 order.getStatus(),
                 newStatus,
                 request.approvalId());
+    }
+
+    private void validateApprovalId(String approvalId) {
+        if (approvalId == null || approvalId.isBlank()) {
+            throw new IllegalArgumentException("approvalId must not be blank");
+        }
     }
 
     private LambdaQueryWrapper<CustomerOrder> orderQuery(Long userId, String status, int limit) {

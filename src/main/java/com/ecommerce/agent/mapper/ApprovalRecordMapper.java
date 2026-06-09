@@ -23,14 +23,40 @@ public interface ApprovalRecordMapper {
                 session_id,
                 status,
                 rejection_reason,
+                execution_result,
                 created_at,
                 expires_at,
                 rejected_at,
-                consumed_at
+                consumed_at,
+                executed_at
             FROM approval_record
             WHERE approval_id = #{approvalId}
             """)
     ApprovalRecord findById(@Param("approvalId") String approvalId);
+
+    @Select("""
+            SELECT
+                approval_id,
+                operation_hash,
+                tool_name,
+                operation_type,
+                operation_payload,
+                operation_detail,
+                user_id,
+                session_id,
+                status,
+                rejection_reason,
+                execution_result,
+                created_at,
+                expires_at,
+                rejected_at,
+                consumed_at,
+                executed_at
+            FROM approval_record
+            WHERE approval_id = #{approvalId}
+            FOR UPDATE
+            """)
+    ApprovalRecord findByIdForUpdate(@Param("approvalId") String approvalId);
 
     @Insert("""
             INSERT INTO approval_record (
@@ -106,20 +132,53 @@ public interface ApprovalRecordMapper {
     @Update("""
             UPDATE approval_record
             SET status = 'consumed',
-                consumed_at = NOW()
+                consumed_at = NOW(),
+                executed_at = NOW(),
+                execution_result = #{executionResult}
             WHERE approval_id = #{approvalId}
-            AND operation_hash = #{operationHash}
-            AND tool_name = #{toolName}
             AND user_id = #{userId}
             AND session_id = #{sessionId}
             AND status = 'approved'
             AND expires_at > NOW()
             AND consumed_at IS NULL
             """)
-    int consumeApproved(
+    int markConsumed(
             @Param("approvalId") String approvalId,
-            @Param("operationHash") String operationHash,
-            @Param("toolName") String toolName,
             @Param("userId") Long userId,
-            @Param("sessionId") String sessionId);
+            @Param("sessionId") String sessionId,
+            @Param("executionResult") String executionResult);
+
+    @Update("""
+            UPDATE approval_record
+            SET status = 'invalidated',
+                executed_at = NOW(),
+                execution_result = #{executionResult}
+            WHERE approval_id = #{approvalId}
+            AND user_id = #{userId}
+            AND session_id = #{sessionId}
+            AND status = 'approved'
+            AND consumed_at IS NULL
+            """)
+    int markInvalidated(
+            @Param("approvalId") String approvalId,
+            @Param("userId") Long userId,
+            @Param("sessionId") String sessionId,
+            @Param("executionResult") String executionResult);
+
+    @Update("""
+            UPDATE approval_record
+            SET status = 'failed',
+                executed_at = NOW(),
+                execution_result = #{executionResult}
+            WHERE approval_id = #{approvalId}
+            AND user_id = #{userId}
+            AND session_id = #{sessionId}
+            AND status = 'approved'
+            AND consumed_at IS NULL
+            """)
+    int markFailed(
+            @Param("approvalId") String approvalId,
+            @Param("userId") Long userId,
+            @Param("sessionId") String sessionId,
+            @Param("executionResult") String executionResult);
 }

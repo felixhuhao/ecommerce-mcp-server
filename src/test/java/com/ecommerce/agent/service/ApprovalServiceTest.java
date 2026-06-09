@@ -58,7 +58,7 @@ class ApprovalServiceTest {
     }
 
     @Test
-    void approveAndConsumeRequiresSameActorSessionToolAndPayload() {
+    void approveRequiresSameActorAndSession() {
         ApprovalRecord approvalRecord = approvalService.createPending(
                 "purchase_order_create",
                 "create",
@@ -67,30 +67,19 @@ class ApprovalServiceTest {
                 1L,
                 "test-session");
 
-        boolean approved = approvalService.approve(approvalRecord.getApprovalId(), 1L, "test-session");
-        boolean wrongPayloadConsumed = approvalService.consumeApproved(
+        boolean wrongSessionApproved = approvalService.approve(
                 approvalRecord.getApprovalId(),
-                "purchase_order_create",
-                "{\"productId\":1,\"quantity\":11}",
                 1L,
-                "test-session");
-        boolean consumed = approvalService.consumeApproved(
+                "other-session");
+        boolean approved = approvalService.approve(
                 approvalRecord.getApprovalId(),
-                "purchase_order_create",
-                "{\"quantity\":10,\"productId\":1}",
-                1L,
-                "test-session");
-        boolean secondConsumed = approvalService.consumeApproved(
-                approvalRecord.getApprovalId(),
-                "purchase_order_create",
-                "{\"productId\":1,\"quantity\":10}",
                 1L,
                 "test-session");
 
+        assertThat(wrongSessionApproved).isFalse();
         assertThat(approved).isTrue();
-        assertThat(wrongPayloadConsumed).isFalse();
-        assertThat(consumed).isTrue();
-        assertThat(secondConsumed).isFalse();
+        assertThat(approvalRecordMapper.findById(approvalRecord.getApprovalId()).getStatus())
+                .isEqualTo("approved");
     }
 
     @Test
@@ -117,22 +106,16 @@ class ApprovalServiceTest {
     }
 
     @Test
-    void approveAndConsumeRejectExpiredApprovalsAndMarkThemExpired() {
+    void approveRejectsExpiredApprovalsAndMarkThemExpired() {
         ApprovalRecord pendingApproval = newApprovalRecord("pending", EXPIRED_AT);
         approvalRecordMapper.insert(pendingApproval);
         ApprovalRecord approvedApproval = newApprovalRecord("approved", EXPIRED_AT);
         approvalRecordMapper.insert(approvedApproval);
 
         boolean approved = approvalService.approve(pendingApproval.getApprovalId(), 1L, "test-session");
-        boolean consumed = approvalService.consumeApproved(
-                approvedApproval.getApprovalId(),
-                approvedApproval.getToolName(),
-                approvedApproval.getOperationPayload(),
-                1L,
-                "test-session");
+        approvalService.findById(approvedApproval.getApprovalId());
 
         assertThat(approved).isFalse();
-        assertThat(consumed).isFalse();
         assertThat(approvalRecordMapper.findById(pendingApproval.getApprovalId()).getStatus())
                 .isEqualTo("expired");
         assertThat(approvalRecordMapper.findById(approvedApproval.getApprovalId()).getStatus())

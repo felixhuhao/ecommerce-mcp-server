@@ -109,21 +109,6 @@ public class ApprovalService {
         return new ApprovalRejectionResult(changed, changed ? normalizedRejectionReason : null);
     }
 
-    public boolean consumeApproved(
-            String approvalId,
-            String toolName,
-            String operationPayload,
-            Long userId,
-            String sessionId) {
-        validateTransitionRequest(approvalId, userId, sessionId);
-        requireText(toolName, "toolName");
-        requireText(operationPayload, "operationPayload");
-
-        expireOpenApproval(approvalId);
-        String operationHash = sha256(canonicalizeJson(operationPayload));
-        return approvalRecordMapper.consumeApproved(approvalId, operationHash, toolName, userId, sessionId) == 1;
-    }
-
     private void expireOpenApproval(String approvalId) {
         approvalRecordMapper.expireOpenById(approvalId);
     }
@@ -171,7 +156,7 @@ public class ApprovalService {
         return value.trim();
     }
 
-    private String canonicalizeJson(String json) {
+    String canonicalizeJson(String json) {
         try {
             JsonNode root = objectMapper.readTree(json);
             return objectMapper.writeValueAsString(sortJson(root));
@@ -200,7 +185,7 @@ public class ApprovalService {
         return node;
     }
 
-    private String sha256(String value) {
+    String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));

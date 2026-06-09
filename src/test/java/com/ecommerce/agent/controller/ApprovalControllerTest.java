@@ -7,6 +7,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,7 +19,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.ecommerce.agent.approval.ApprovalPayloadBuilder;
 import com.ecommerce.agent.domain.ApprovalRecord;
+import com.ecommerce.agent.dto.ApprovalRequest;
 import com.ecommerce.agent.service.ApprovalService;
 
 @SpringBootTest(properties = "app.auth.service-token=test-service-token")
@@ -30,6 +36,9 @@ class ApprovalControllerTest {
 
     @Autowired
     private ApprovalService approvalService;
+
+    @Autowired
+    private ApprovalPayloadBuilder approvalPayloadBuilder;
 
     @Test
     void findByIdReturnsApprovalForBoundActorAndSession() throws Exception {
@@ -119,6 +128,22 @@ class ApprovalControllerTest {
     }
 
     @Test
+    void executeApprovedApprovalRunsStoredPayload() throws Exception {
+        ApprovalRecord approvalRecord = createPendingPurchaseOrderCreateApproval("test-session");
+        approvalService.approve(approvalRecord.getApprovalId(), 1L, "test-session");
+
+        mockMvc.perform(post("/approvals/{approvalId}/execute", approvalRecord.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
+                .header("X-User-Id", "1")
+                .header("X-Session-Id", "test-session"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvalId").value(approvalRecord.getApprovalId()))
+                .andExpect(jsonPath("$.status").value("consumed"))
+                .andExpect(jsonPath("$.executionResult", containsString("\"status\"")))
+                .andExpect(jsonPath("$.executionResult", containsString("\"created\"")));
+    }
+
+    @Test
     void approveRejectsMissingServiceToken() throws Exception {
         ApprovalRecord approvalRecord = createPendingApproval("test-session");
 
@@ -136,5 +161,26 @@ class ApprovalControllerTest {
                 "{\"title\":\"Create purchase order\"}",
                 1L,
                 sessionId);
+    }
+
+    private ApprovalRecord createPendingPurchaseOrderCreateApproval(String sessionId) {
+        ApprovalRequest approvalRequest = new ApprovalRequest(
+                "purchase_order_create",
+                "create",
+                Map.of(
+                        "supplierId", 1,
+                        "items", List.of(Map.of(
+                                "productId", 2,
+                                "quantity", 10,
+                                "unitCost", new BigDecimal("12.50")))),
+                1L,
+                sessionId);
+        return approvalService.createPending(
+                approvalRequest.toolName(),
+                approvalRequest.operationType(),
+                approvalPayloadBuilder.operationPayloadJson(approvalRequest),
+                approvalPayloadBuilder.operationDetailJson(approvalRequest),
+                approvalRequest.userId(),
+                approvalRequest.sessionId());
     }
 }

@@ -67,7 +67,7 @@ class ApprovalRecordMapperTest {
     }
 
     @Test
-    void consumeApprovedIsOneTimeUse() {
+    void markConsumedIsOneTimeUseAndStoresExecutionResult() throws JacksonException {
         ApprovalRecord approvalRecord = newApprovalRecord();
         approvalRecordMapper.insert(approvalRecord);
         approvalRecordMapper.approvePending(
@@ -75,24 +75,57 @@ class ApprovalRecordMapperTest {
                 approvalRecord.getUserId(),
                 approvalRecord.getSessionId());
 
-        int consumedRows = approvalRecordMapper.consumeApproved(
+        int consumedRows = approvalRecordMapper.markConsumed(
                 approvalRecord.getApprovalId(),
-                approvalRecord.getOperationHash(),
-                approvalRecord.getToolName(),
                 approvalRecord.getUserId(),
-                approvalRecord.getSessionId());
-        int secondConsumedRows = approvalRecordMapper.consumeApproved(
+                approvalRecord.getSessionId(),
+                "{\"status\":\"created\"}");
+        int secondConsumedRows = approvalRecordMapper.markConsumed(
                 approvalRecord.getApprovalId(),
-                approvalRecord.getOperationHash(),
-                approvalRecord.getToolName(),
                 approvalRecord.getUserId(),
-                approvalRecord.getSessionId());
+                approvalRecord.getSessionId(),
+                "{\"status\":\"created\"}");
 
         ApprovalRecord found = approvalRecordMapper.findById(approvalRecord.getApprovalId());
         assertThat(consumedRows).isEqualTo(1);
         assertThat(secondConsumedRows).isZero();
         assertThat(found.getStatus()).isEqualTo("consumed");
+        assertThat(json(found.getExecutionResult())).isEqualTo(json("{\"status\":\"created\"}"));
         assertThat(found.getConsumedAt()).isNotNull();
+        assertThat(found.getExecutedAt()).isNotNull();
+    }
+
+    @Test
+    void markInvalidatedAndFailedStoreExecutionResult() throws JacksonException {
+        ApprovalRecord invalidatedApproval = newApprovalRecord();
+        invalidatedApproval.setStatus("approved");
+        approvalRecordMapper.insert(invalidatedApproval);
+
+        ApprovalRecord failedApproval = newApprovalRecord();
+        failedApproval.setStatus("approved");
+        approvalRecordMapper.insert(failedApproval);
+
+        int invalidatedRows = approvalRecordMapper.markInvalidated(
+                invalidatedApproval.getApprovalId(),
+                invalidatedApproval.getUserId(),
+                invalidatedApproval.getSessionId(),
+                "{\"status\":\"invalidated\"}");
+        int failedRows = approvalRecordMapper.markFailed(
+                failedApproval.getApprovalId(),
+                failedApproval.getUserId(),
+                failedApproval.getSessionId(),
+                "{\"status\":\"failed\"}");
+
+        ApprovalRecord invalidatedFound = approvalRecordMapper.findById(invalidatedApproval.getApprovalId());
+        ApprovalRecord failedFound = approvalRecordMapper.findById(failedApproval.getApprovalId());
+        assertThat(invalidatedRows).isEqualTo(1);
+        assertThat(invalidatedFound.getStatus()).isEqualTo("invalidated");
+        assertThat(json(invalidatedFound.getExecutionResult())).isEqualTo(json("{\"status\":\"invalidated\"}"));
+        assertThat(invalidatedFound.getExecutedAt()).isNotNull();
+        assertThat(failedRows).isEqualTo(1);
+        assertThat(failedFound.getStatus()).isEqualTo("failed");
+        assertThat(json(failedFound.getExecutionResult())).isEqualTo(json("{\"status\":\"failed\"}"));
+        assertThat(failedFound.getExecutedAt()).isNotNull();
     }
 
     @Test

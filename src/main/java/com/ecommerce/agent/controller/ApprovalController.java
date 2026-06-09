@@ -13,8 +13,11 @@ import com.ecommerce.agent.auth.TrustedActor;
 import com.ecommerce.agent.auth.TrustedActorContext;
 import com.ecommerce.agent.domain.ApprovalRecord;
 import com.ecommerce.agent.dto.ApprovalDecisionResponse;
+import com.ecommerce.agent.dto.ApprovalExecutionResponse;
 import com.ecommerce.agent.dto.ApprovalRejectRequest;
 import com.ecommerce.agent.dto.ApprovalResponse;
+import com.ecommerce.agent.service.ApprovalExecutor;
+import com.ecommerce.agent.service.ApprovalExecutor.ApprovalExecutionOutcome;
 import com.ecommerce.agent.service.ApprovalService;
 import com.ecommerce.agent.service.ApprovalService.ApprovalRejectionResult;
 
@@ -23,10 +26,15 @@ import com.ecommerce.agent.service.ApprovalService.ApprovalRejectionResult;
 public class ApprovalController {
 
     private final ApprovalService approvalService;
+    private final ApprovalExecutor approvalExecutor;
     private final TrustedActorContext trustedActorContext;
 
-    public ApprovalController(ApprovalService approvalService, TrustedActorContext trustedActorContext) {
+    public ApprovalController(
+            ApprovalService approvalService,
+            ApprovalExecutor approvalExecutor,
+            TrustedActorContext trustedActorContext) {
         this.approvalService = approvalService;
+        this.approvalExecutor = approvalExecutor;
         this.trustedActorContext = trustedActorContext;
     }
 
@@ -59,6 +67,18 @@ public class ApprovalController {
                 actor.sessionId(),
                 rejectionReason);
         return decisionResponse(approvalId, "rejected", result.changed(), result.rejectionReason());
+    }
+
+    @PostMapping("/{approvalId}/execute")
+    public ResponseEntity<ApprovalExecutionResponse> execute(@PathVariable String approvalId) {
+        TrustedActor actor = trustedActorContext.requireCurrentActor();
+        ApprovalExecutionOutcome outcome = approvalExecutor.execute(approvalId, actor);
+        ApprovalExecutionResponse response = new ApprovalExecutionResponse(
+                outcome.approvalId(),
+                outcome.status(),
+                outcome.executionResult(),
+                outcome.message());
+        return ResponseEntity.status(outcome.httpStatus()).body(response);
     }
 
     private ResponseEntity<ApprovalDecisionResponse> decisionResponse(

@@ -12,7 +12,8 @@ public record ApprovalResponse(
         Long userId,
         String sessionId,
         String status,
-        String rejectionReason) {
+        String rejectionReason,
+        String executionResult) {
 
     public static ApprovalResponse from(ApprovalRecord approvalRecord) {
         return new ApprovalResponse(
@@ -25,6 +26,7 @@ public record ApprovalResponse(
                 approvalRecord.getUserId(),
                 approvalRecord.getSessionId(),
                 approvalRecord.getStatus(),
-                approvalRecord.getRejectionReason());
+                approvalRecord.getRejectionReason(),
+                approvalRecord.getExecutionResult());
     }
 }

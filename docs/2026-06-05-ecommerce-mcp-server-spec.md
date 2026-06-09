@@ -1,7 +1,8 @@
 # E-Commerce MCP Server (SpringBoot) — Design Spec
 
 > The Java/SpringBoot service for the E-Commerce AI Assistant.
-> Status: Java scope implemented (read + write tools, HITL enforcement, `get_statistics`); pending
+> Status: Java scope implemented (read tools + `request_approval`, backend execute-by-approval,
+> HITL enforcement, `get_statistics`); pending
 > cross-project E2E from the Python caller (§7) | Date: 2026-06-05
 > Parent spec: [2026-05-25-ecommerce-agent-design.md](../../docs/superpowers/specs/2026-05-25-ecommerce-agent-design.md)
 
@@ -24,8 +25,9 @@ all reads and writes to `ecommerce_db`.
 **Java owns:**
 - Business logic (query / create / update over products, orders, inventory, users, suppliers)
 - The MySQL database and all SQL
-- The business-tool **MCP surface** (Spring AI `@McpTool` methods)
-- **HITL approval enforcement** — write tools refuse to execute without a valid `approval_id`
+- The business-tool **MCP surface** (Spring AI `@McpTool` methods): reads + `request_approval`
+- **HITL approval enforcement** — approved writes execute only through the backend
+  `/approvals/{approval_id}/execute` endpoint from stored server payload
 
 **Java does NOT own (lives in the Python/Agent side):**
 - Agent orchestration, routing, context management (DeepAgents + LangGraph)
@@ -38,7 +40,8 @@ all reads and writes to `ecommerce_db`.
 ```
 DeepAgents Agent (MultiServerMCPClient)
   ├──► SpringBoot MCP Server  ◄── this spec
-  │       @McpTool business tools + approval enforcement
+  │       @McpTool read tools + request_approval
+  │       REST approve/reject/read/execute + approval enforcement
   │       Service → Mapper → MySQL (ecommerce_db)
   ├──► ModelScope MCP (charts)
   └──► Python MCP (sandbox / run_code)
@@ -78,9 +81,9 @@ orders are the procurement write path.
 | purchase_order_item | PO line items | po_item_id, po_id, product_id, quantity, unit_cost |
 
 `purchase_order.status` lifecycle: `placed` → `received` (inventory incremented) / `cancelled`.
-A PO row is only ever inserted by an **already-approved** `purchase_order_create` call, so it
-starts at `placed` — the pending/approved gate lives in `approval_record` (§4), not on the PO
-itself. `unit_cost` (paid to supplier) is tracked separately from `product.price` (charged to
+A PO row is only ever inserted by the backend executor after a matching approval has been approved,
+so it starts at `placed` — the pending/approved gate lives in `approval_record` (§4), not on the
+PO itself. `unit_cost` (paid to supplier) is tracked separately from `product.price` (charged to
 customers).
 
 Relationships:
@@ -112,22 +115,25 @@ CREATE TABLE approval_record (
   operation_detail  JSON NOT NULL,               -- server-rendered card/diff/impact (from canonical payload + DB; never Agent prose)
   user_id        BIGINT NOT NULL,                -- actor the approval is bound to
   session_id     VARCHAR(64) NOT NULL,           -- session the approval is bound to
-  status         VARCHAR(10) NOT NULL DEFAULT 'pending',  -- pending | approved | consumed | rejected | expired
+  status         VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending | approved | consumed | invalidated | failed | rejected | expired
   rejection_reason TEXT NULL,                    -- human-supplied reason when rejected
+  execution_result JSON NULL,                    -- deterministic backend execution result or terminal error
   created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at     DATETIME NOT NULL,
   rejected_at    DATETIME NULL,                  -- set when rejected
   consumed_at    DATETIME NULL,                  -- set when the write executes (one-time use)
+  executed_at    DATETIME NULL,                  -- set when execute completes (success, invalidated, failed)
   KEY idx_status (status)
 );
 ```
 
-The extra columns (`tool_name`, `session_id`, `consumed_at`, and the `consumed` status) exist
-to enforce tool binding, actor/session binding, and one-time use — see §4.3.
+The extra columns (`tool_name`, `session_id`, `consumed_at`, `execution_result`, `executed_at`,
+and the `consumed` / `invalidated` / `failed` statuses) exist to enforce tool binding,
+actor/session binding, one-time use, and auditable backend execution — see §4.3.
 
 ## 3. MCP Tools
 
-Business capability is exposed as Spring AI `@McpTool` methods. Spring AI derives the
+Read capability and approval requests are exposed as Spring AI `@McpTool` methods. Spring AI derives the
 MCP tool schema from the method signature plus `@McpToolParam` metadata, and the
 `spring-ai-starter-mcp-server-webmvc` starter serves them over streamable-HTTP/SSE
 for the DeepAgents client to discover and call.
@@ -147,11 +153,12 @@ served here — they belong to the ModelScope and Python MCP servers (see parent
 | supplier_query | Read | SupplierService.search | Search suppliers by name (fuzzy) |
 | supplier_top | Read | SupplierService.findTopSuppliers | List top suppliers by rating and lead time |
 | purchase_order_query | Read | PurchaseOrderService.query | Query supplier purchase orders |
-| purchase_order_create | Write | PurchaseOrderService.create | Create a supplier purchase order — restock (requires approval_id) |
-| purchase_order_receive | Write | PurchaseOrderService.receive | Mark a PO received → increment inventory (requires approval_id) |
-| order_update | Write | OrderService.update | Update a customer order's fulfillment status (requires approval_id) |
 | request_approval | Write | ApprovalService.create | Take structured operation params; Java builds the canonical authorization payload (params + server preconditions), hashes it, derives the human-facing card server-side, stores a pending record, returns approval_id |
 | get_statistics | Read | StatsService.get | Return aggregation-first overview stats for orders, inventory, products, purchase orders, and top-selling products. Top sellers are ranked by **realized sales** — `order_item` rows whose order is `paid`/`shipped`/`completed`, excluding `cancelled`/`pending` — so the figure reflects revenue actually earned, not gross intake |
+
+The former write tools `purchase_order_create`, `purchase_order_receive`, and `order_update` are
+not advertised on the MCP surface. They remain as backend service operations and execute only from
+`POST /approvals/{approval_id}/execute` using the stored `operation_payload`.
 
 **Post-MVP write tools** (documented so the approval framework anticipates them, not built yet):
 `order_cancel` (High-risk batch — "cancel pending orders >30 days") and any delete tool, both
@@ -194,9 +201,10 @@ thin — it delegates to services and does no business logic of its own.
 
 ## 4. HITL Approval Enforcement
 
-Write operations are **server-enforced**, not prompt-based. The server rejects any
-write tool call without a valid `approval_id`. This is the core security
-responsibility of the Java project.
+Write operations are **server-enforced**, not prompt-based. The Agent can request an approval, but
+it cannot call any write tool. Business writes execute only when the authenticated REST caller
+invokes `/approvals/{approval_id}/execute`, and Java dispatches from the stored canonical payload.
+This is the core security responsibility of the Java project.
 
 ### 4.1 Risk Levels
 
@@ -241,10 +249,12 @@ Agent calls request_approval(tool_name, operation_params)   ← structured param
   → returns {approval_id, operation_hash}
   ── (human approves/rejects via the §4.4 endpoint; Agent paused on a LangGraph checkpoint) ──
   → on approve, approval_record.status = approved
-Agent calls the write tool (e.g. purchase_order_create) with approval_id + the same operation_params
-  → service re-derives trusted identity + current DB preconditions and runs the validation contract (§4.3)
-    → valid   → execute the write, set status=consumed + consumed_at
-    → invalid → reject with a typed error
+FastAPI/human path calls POST /approvals/{approval_id}/execute
+  → ApprovalExecutor loads the stored operation_payload; request body contains no operation params
+  → executor re-derives trusted identity + current DB preconditions and runs the validation contract (§4.3)
+    → valid   → execute the write, set status=consumed + consumed_at + executed_at + execution_result
+    → stale   → set status=invalidated + execution_result; require a fresh approval
+    → failed  → roll back business write, set status=failed + execution_result
 ```
 
 **The Agent never authors what the human sees.** `request_approval` takes only structured
@@ -254,29 +264,33 @@ the card and the hash are derived from the *same* server-side payload.
 
 **State freshness:** the approval pins the DB facts that are required to authorize the write,
 not every field shown on the card. If an order/PO state or product cost/status changes between
-approval creation and the resumed write, the write tool must reject with a stale-approval error
+approval creation and backend execution, the executor must reject with a stale-approval error
 and require a new approval. Volatile display-only fields, such as current inventory quantity on
 `purchase_order_create`, can remain in `operation_detail` without entering the hashed payload.
 
 ### 4.3 Enforcement Contract (required checks)
 
-Before any write tool executes, the service layer MUST verify **all** of:
+Before any approved write executes, the backend executor MUST verify **all** of:
 
 1. **Exists & approved** — `approval_id` exists and `status = approved` (not pending/rejected/expired/consumed).
-2. **Hash + precondition match** — rebuild the canonical `operation_payload` from the incoming
-   operation params plus current DB preconditions/snapshot; its hash must equal the stored hash.
-   This rejects both Agent tampering and stale approvals after relevant DB state changes.
-3. **Tool binding** — the stored `tool_name` equals the tool now executing (an order approval can't authorize a PO).
+2. **Hash integrity + live precondition match** — re-canonicalize the stored `operation_payload`
+   and verify `operation_hash`; then rebuild the canonical payload from the stored operation params
+   plus current DB preconditions/snapshot. Its hash must equal the stored hash. This rejects DB
+   tampering and stale approvals after relevant DB state changes.
+3. **Tool binding** — the stored `tool_name` equals the operation dispatched by the executor
+   (an order approval can't authorize a PO).
 4. **Actor/session binding** — the trusted request `user_id` **and** `session_id` match the record's. An approval issued in one session/actor cannot be replayed by another.
 5. **Not expired** — `now < expires_at`.
-6. **One-time use** — `consumed_at IS NULL`; on success, atomically set `status=consumed`, `consumed_at=now` (e.g. a conditional `UPDATE ... WHERE status='approved'`) so concurrent calls can't double-spend one approval.
+6. **One-time use** — `consumed_at IS NULL`; execute under row lock / conditional update so
+   concurrent execute calls can't double-spend one approval. Replays of `consumed` return the
+   stored `execution_result`.
 
 Any failure → typed error, no write. All write attempts (allowed and rejected) should be auditable.
 
 **Why `operation_hash`:** it pins the approval to the exact operation and DB facts shown to the
-user. If the Agent submits different params, or if relevant DB state changes after approval, the
-hash won't match and the write is rejected — preventing post-approval tampering and stale-impact
-writes.
+user. If relevant DB state changes after approval, the hash won't match and execution is
+invalidated. The Agent never re-submits write params in M2, so post-approval param tampering is
+removed from the tool surface.
 
 **Canonical serialization:** the hash MUST be computed over a deterministic serialization
 (sorted keys, fixed number/date formats, normalized whitespace) so the same logical payload
@@ -285,7 +299,7 @@ domain-relevant preconditions in the payload; do not include volatile display-on
 localized labels or formatting. SHA-256 is fine.
 
 **Expiry policy:** approvals default to a 15-minute TTL. Expired `pending` / `approved` rows are
-rejected and lazily marked `expired` when read, approved/rejected, or consumed. A sweep job is not
+rejected and lazily marked `expired` when read, approved/rejected, or executed. A sweep job is not
 required for the MVP because the enforcement path is fail-closed.
 
 ### 4.4 Approval Transition Endpoint (non-agent)
@@ -296,6 +310,7 @@ must never be able to approve its own request — only a human (via the frontend
 ```
 POST /approvals/{approval_id}/approve     (auth required)
 POST /approvals/{approval_id}/reject      body: { reason }   (auth required; reason is persisted)
+POST /approvals/{approval_id}/execute     (auth required; no body; executes stored payload)
 ```
 
 Contract:
@@ -304,9 +319,9 @@ Contract:
   Agent's tool list, so the Agent cannot reach them.
 - **Actor binding** — the approving user/session must match the `approval_record` it transitions
   (you can't approve another session's request).
-- **Valid transitions only** — `pending → approved` / `pending → rejected`; reject anything
-  already `approved`/`consumed`/`rejected`/`expired`. Approving does not execute the write — it
-  only flips status so the resumed Agent's write call can pass §4.3.
+- **Valid transitions only** — approve/reject are `pending → approved` / `pending → rejected`;
+  execute is `approved → consumed|invalidated|failed`. Approving does not execute the write — it
+  only flips status so the backend execute endpoint can pass §4.3.
 - A read endpoint (`GET /approvals/{id}` or list pending for a session) backs the frontend
   approval card; it returns the **server-rendered** `operation_detail`, never Agent prose.
 
@@ -318,7 +333,7 @@ This is the one REST surface the agent path genuinely requires (see §5).
 com.ecommerce.agent/
 ├── tool/           # @McpTool MCP tools (exposed via Spring AI)
 ├── controller/     # Approval REST endpoints (§4.4) — human/FastAPI only, NOT MCP
-├── service/        # Business logic + approval enforcement
+├── service/        # Business logic + ApprovalExecutor enforcement
 ├── approval/       # Canonical payload/detail builder (server-derived preconditions, §4.2)
 ├── mapper/         # MyBatis-Plus mappers (annotation-based @Select/@Update; XML available if a query needs it)
 ├── domain/         # MyBatis-Plus entities
@@ -327,9 +342,9 @@ com.ecommerce.agent/
 └── config/         # Spring configuration (MCP server, datasource, auth)
 ```
 
-> `controller/` is **required** — it hosts the authenticated approve/reject/read endpoints
-> from §4.4. Business reads/writes stay on the MCP `@McpTool` path; the controller exists only for
-> the human-driven approval transition (and any future non-agent client).
+> `controller/` is **required** — it hosts the authenticated approve/reject/read/execute endpoints
+> from §4.4. Business reads stay on the MCP `@McpTool` path; business writes execute through the
+> non-MCP backend executor.
 
 ## 6. Technology Stack
 
@@ -358,9 +373,10 @@ separately because the caller lives in the parent/Python project.
       (top sellers ranked by realized sales — `paid`/`shipped`/`completed` only)
 - [x] `request_approval` → build canonical payload (params + server preconditions), hash it,
       **render the card server-side**, create pending `approval_record` (tool/actor/session binding)
-- [x] Authenticated approve/reject/read endpoints (§4.4) — `controller/`, not MCP tools
-- [x] Write tools `purchase_order_create` (→ `placed` PO), `purchase_order_receive`
-      (→ inventory +qty), `order_update` — each enforcing the full §4.3 contract
+- [x] Authenticated approve/reject/read/execute endpoints (§4.4) — `controller/`, not MCP tools
+- [x] Backend-executed writes `purchase_order_create` (→ `placed` PO), `purchase_order_receive`
+      (→ inventory +qty), `order_update` — each enforcing the full §4.3 contract from stored payload
+- [x] Remove agent-reachable MCP write tools; MCP advertises reads + `request_approval` only
 - [x] SpringBoot tests run against hermetic Testcontainers MySQL initialized from
       `schema.sql` + `data.sql` (no live local MySQL dependency)
 - [ ] Parent/Python project verifies end-to-end from DeepAgents `MultiServerMCPClient` with this
