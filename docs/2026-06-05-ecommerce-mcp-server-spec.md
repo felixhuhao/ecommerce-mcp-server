@@ -255,6 +255,8 @@ FastAPI/human path calls POST /approvals/{approval_id}/execute
     → valid   → execute the write, set status=consumed + consumed_at + executed_at + execution_result
     → stale   → set status=invalidated + execution_result; require a fresh approval
     → failed  → roll back business write, set status=failed + execution_result
+    → infra   → roll back, return HTTP 503 {reasonCode: infrastructure_error, retryable: true};
+                keep status=approved so the same approval_id can be retried
 ```
 
 **The Agent never authors what the human sees.** `request_approval` takes only structured
@@ -322,6 +324,9 @@ Contract:
 - **Valid transitions only** — approve/reject are `pending → approved` / `pending → rejected`;
   execute is `approved → consumed|invalidated|failed`. Approving does not execute the write — it
   only flips status so the backend execute endpoint can pass §4.3.
+- **Execute response** — returns the final status plus `executionResult` as a parsed JSON object
+  rather than a JSON-encoded string. Retryable database/infrastructure errors return HTTP `503`
+  with `reasonCode = infrastructure_error` and `retryable = true`, leaving the approval `approved`.
 - A read endpoint (`GET /approvals/{id}` or list pending for a session) backs the frontend
   approval card; it returns the **server-rendered** `operation_detail`, never Agent prose.
 

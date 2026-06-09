@@ -1,13 +1,21 @@
 package com.ecommerce.agent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.jdbc.Sql;
 
@@ -93,6 +101,39 @@ class ApprovalExecutorTest {
     }
 
     @Test
+    void concurrentExecuteCreatesPurchaseOrderOnceAndReplaysStoredResult() throws Exception {
+        long purchaseOrderCount = countPurchaseOrders();
+        String approvalId = approvedCreateApprovalId(createRequest(null));
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<ApprovalExecutionOutcome> executeTask = () -> {
+            ready.countDown();
+            if (!start.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("concurrent execute did not start");
+            }
+            return approvalExecutor.execute(approvalId, ACTOR);
+        };
+
+        try {
+            Future<ApprovalExecutionOutcome> firstFuture = executorService.submit(executeTask);
+            Future<ApprovalExecutionOutcome> secondFuture = executorService.submit(executeTask);
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            ApprovalExecutionOutcome first = firstFuture.get(10, TimeUnit.SECONDS);
+            ApprovalExecutionOutcome second = secondFuture.get(10, TimeUnit.SECONDS);
+
+            assertThat(first.status()).isEqualTo("consumed");
+            assertThat(second.status()).isEqualTo("consumed");
+            assertThat(first.executionResult()).isEqualTo(second.executionResult());
+            assertThat(countPurchaseOrders()).isEqualTo(purchaseOrderCount + 1);
+        } finally {
+            executorService.shutdownNow();
+        }
+    }
+
+    @Test
     void executePurchaseOrderReceiveFromStoredPayload() throws JacksonException {
         PurchaseOrderCreateResult created = purchaseOrderService.createPurchaseOrderFromApproval(createRequest("seed-approval"));
         Inventory inventoryBefore = inventoryMapper.findByProductId(2L);
@@ -142,10 +183,27 @@ class ApprovalExecutorTest {
     }
 
     @Test
+    void executeInvalidatesLivePreconditionFailureWithStaleReasonCode() throws JacksonException {
+        PurchaseOrderCreateResult created = purchaseOrderService.createPurchaseOrderFromApproval(createRequest("seed-approval"));
+        String approvalId = approvedReceiveApprovalId(receiveRequest(null, created.poId()));
+        assertThat(purchaseOrderMapper.markReceivedIfPlaced(created.poId())).isEqualTo(1);
+
+        ApprovalExecutionOutcome outcome = approvalExecutor.execute(approvalId, ACTOR);
+
+        ApprovalRecord approvalRecord = approvalRecordMapper.findById(approvalId);
+        JsonNode executionResult = json(approvalRecord.getExecutionResult());
+        assertThat(outcome.status()).isEqualTo("invalidated");
+        assertThat(approvalRecord.getStatus()).isEqualTo("invalidated");
+        assertThat(executionResult.get("reasonCode").asString()).isEqualTo("stale_precondition");
+        assertThat(executionResult.get("message").asString()).contains("must be placed");
+    }
+
+    @Test
     void executeInvalidatesTamperedOperationHash() throws JacksonException {
         String approvalId = approvedCreateApprovalId(createRequest(null));
         jdbcTemplate.update("UPDATE approval_record SET operation_hash = ? WHERE approval_id = ?", "f".repeat(64), approvalId);
 
+        // operation_detail is display-only; execution trusts operation_payload and its hash.
         ApprovalExecutionOutcome outcome = approvalExecutor.execute(approvalId, ACTOR);
 
         JsonNode executionResult = json(approvalRecordMapper.findById(approvalId).getExecutionResult());
@@ -175,8 +233,8 @@ class ApprovalExecutorTest {
         assertThat(rejected.status()).isEqualTo("rejected");
         assertThat(expired.status()).isEqualTo("expired");
         assertThat(approvalRecordMapper.findById(expiredApprovalId).getStatus()).isEqualTo("expired");
-        assertThat(wrongSession.status()).isEqualTo("approved");
-        assertThat(wrongSession.message()).contains("not bound");
+        assertThat(wrongSession.status()).isEqualTo("not_found");
+        assertThat(wrongSession.message()).contains("not found");
     }
 
     @Test
@@ -193,6 +251,21 @@ class ApprovalExecutorTest {
         assertThat(approvalRecord.getStatus()).isEqualTo("failed");
         assertThat(approvalRecord.getExecutionResult()).contains("inventory row does not exist");
         assertThat(purchaseOrder.getStatus()).isEqualTo("placed");
+    }
+
+    @Test
+    void executeLeavesApprovalApprovedWhenBusinessWriteHitsDataAccessException() {
+        long purchaseOrderCount = countPurchaseOrders();
+        String approvalId = approvedCreateApprovalId(createRequest(null));
+        jdbcTemplate.execute("DROP TABLE purchase_order_item");
+
+        assertThatThrownBy(() -> approvalExecutor.execute(approvalId, ACTOR))
+                .isInstanceOf(DataAccessException.class);
+
+        ApprovalRecord approvalRecord = approvalRecordMapper.findById(approvalId);
+        assertThat(approvalRecord.getStatus()).isEqualTo("approved");
+        assertThat(approvalRecord.getExecutionResult()).isNull();
+        assertThat(countPurchaseOrders()).isEqualTo(purchaseOrderCount);
     }
 
     private String pendingCreateApprovalId(PurchaseOrderCreateRequest request) {

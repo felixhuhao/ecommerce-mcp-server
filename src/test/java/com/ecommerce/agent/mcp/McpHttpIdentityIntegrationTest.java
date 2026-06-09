@@ -148,7 +148,8 @@ class McpHttpIdentityIntegrationTest {
         assertThat(toolNames).contains(
                 "request_approval",
                 "purchase_order_query",
-                "order_query");
+                "order_query",
+                "get_statistics");
         assertThat(toolNames).doesNotContain(
                 "purchase_order_create",
                 "purchase_order_receive",

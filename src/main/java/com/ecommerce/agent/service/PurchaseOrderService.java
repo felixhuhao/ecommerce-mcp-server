@@ -66,12 +66,13 @@ public class PurchaseOrderService {
         validateApprovalId(request.approvalId());
         List<PurchaseOrderItem> items = purchaseOrderMapper.findItemsByPoId(request.poId());
         if (items.isEmpty()) {
-            throw new IllegalStateException("purchase order has no items: " + request.poId());
+            throw new ApprovalPreconditionDriftException("purchase order has no items: " + request.poId());
         }
 
         int purchaseOrderRows = purchaseOrderMapper.markReceivedIfPlaced(request.poId());
         if (purchaseOrderRows != 1) {
-            throw new IllegalStateException("purchase order could not be marked received: " + request.poId());
+            throw new ApprovalPreconditionDriftException(
+                    "purchase order could not be marked received: " + request.poId());
         }
 
         items.forEach(this::incrementInventory);

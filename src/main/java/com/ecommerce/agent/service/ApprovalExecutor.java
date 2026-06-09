@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -33,6 +34,10 @@ public class ApprovalExecutor {
     private static final String CONSUMED = "consumed";
     private static final String FAILED = "failed";
     private static final String INVALIDATED = "invalidated";
+    private static final String PAYLOAD_BINDING_MISMATCH = "payload_binding_mismatch";
+    private static final String PAYLOAD_INTEGRITY_FAILURE = "payload_integrity_failure";
+    private static final String PAYLOAD_INVALID = "payload_invalid";
+    private static final String STALE_PRECONDITION = "stale_precondition";
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
     private static final TypeReference<List<PurchaseOrderCreateItemRequest>> CREATE_ITEMS_TYPE = new TypeReference<>() {
@@ -72,7 +77,7 @@ public class ApprovalExecutor {
             return notFound(approvalId);
         }
         if (!isSameActor(existing, actor)) {
-            return conflict(approvalId, existing.getStatus(), null, "approval is not bound to this actor/session");
+            return notFound(approvalId);
         }
         if (isTerminal(existing)) {
             return terminal(existing);
@@ -84,6 +89,10 @@ public class ApprovalExecutor {
 
         try {
             return transactionTemplate.execute(status -> executeApprovedInTransaction(approvalId, actor));
+        } catch (ApprovalInvalidationException e) {
+            return markInvalidatedAfterRollback(approvalId, actor, e.reasonCode(), e.getMessage());
+        } catch (DataAccessException e) {
+            throw e;
         } catch (RuntimeException e) {
             return markFailedAfterRollback(approvalId, actor, e);
         }
@@ -95,7 +104,7 @@ public class ApprovalExecutor {
             return notFound(approvalId);
         }
         if (!isSameActor(locked, actor)) {
-            return conflict(approvalId, locked.getStatus(), null, "approval is not bound to this actor/session");
+            return notFound(approvalId);
         }
         if (isExpired(locked)) {
             approvalRecordMapper.expireOpenById(approvalId);
@@ -112,8 +121,8 @@ public class ApprovalExecutor {
         StoredOperation operation;
         try {
             operation = validateStoredOperation(locked, actor);
-        } catch (IllegalArgumentException e) {
-            return markInvalidated(locked, invalidationReasonCode(e.getMessage()), e.getMessage());
+        } catch (ApprovalInvalidationException e) {
+            return markInvalidated(locked, e.reasonCode(), e.getMessage());
         }
 
         Object businessResult = executeBusinessWrite(locked, operation, actor);
@@ -137,17 +146,22 @@ public class ApprovalExecutor {
     }
 
     private StoredOperation validateStoredOperation(ApprovalRecord approvalRecord, TrustedActor actor) {
-        String canonicalStoredPayload = approvalService.canonicalizeJson(approvalRecord.getOperationPayload());
+        String canonicalStoredPayload;
+        try {
+            canonicalStoredPayload = approvalService.canonicalizeJson(approvalRecord.getOperationPayload());
+        } catch (IllegalArgumentException e) {
+            throw invalidation(PAYLOAD_INVALID, "operation payload must be valid JSON", e);
+        }
         if (!sameHash(approvalRecord.getOperationHash(), approvalService.sha256(canonicalStoredPayload))) {
-            throw new IllegalArgumentException("operation payload hash mismatch");
+            throw invalidation(PAYLOAD_INTEGRITY_FAILURE, "operation payload hash mismatch");
         }
 
         StoredOperation operation = parseStoredOperation(approvalRecord);
         if (!approvalRecord.getToolName().equals(operation.toolName())) {
-            throw new IllegalArgumentException("operation payload toolName does not match approval record");
+            throw invalidation(PAYLOAD_BINDING_MISMATCH, "operation payload toolName does not match approval record");
         }
         if (!approvalRecord.getOperationType().equals(operation.operationType())) {
-            throw new IllegalArgumentException("operation payload operationType does not match approval record");
+            throw invalidation(PAYLOAD_BINDING_MISMATCH, "operation payload operationType does not match approval record");
         }
 
         ApprovalRequest request = new ApprovalRequest(
@@ -156,34 +170,48 @@ public class ApprovalExecutor {
                 operation.operationParams(),
                 actor.userId(),
                 actor.sessionId());
-        approvalPayloadBuilder.validateSupportedRequest(request);
-        String livePayload = approvalPayloadBuilder.operationPayloadJson(request);
+        try {
+            approvalPayloadBuilder.validateSupportedRequest(request);
+        } catch (IllegalArgumentException e) {
+            throw invalidation(PAYLOAD_INVALID, e.getMessage(), e);
+        }
+
+        String livePayload;
+        try {
+            livePayload = approvalPayloadBuilder.operationPayloadJson(request);
+        } catch (IllegalArgumentException e) {
+            throw invalidation(STALE_PRECONDITION, e.getMessage(), e);
+        }
         if (!sameHash(approvalRecord.getOperationHash(), approvalService.sha256(approvalService.canonicalizeJson(livePayload)))) {
-            throw new IllegalArgumentException("approved operation is stale; request a fresh approval");
+            throw invalidation(STALE_PRECONDITION, "approved operation is stale; request a fresh approval");
         }
 
         return operation;
     }
 
     private Object executeBusinessWrite(ApprovalRecord approvalRecord, StoredOperation operation, TrustedActor actor) {
-        return switch (operation.toolName()) {
-            case ApprovalPayloadBuilder.PURCHASE_ORDER_CREATE_TOOL ->
-                    purchaseOrderService.createPurchaseOrderFromApproval(toPurchaseOrderCreateRequest(
-                            approvalRecord,
-                            operation,
-                            actor));
-            case ApprovalPayloadBuilder.PURCHASE_ORDER_RECEIVE_TOOL ->
-                    purchaseOrderService.receivePurchaseOrderFromApproval(toPurchaseOrderReceiveRequest(
-                            approvalRecord,
-                            operation,
-                            actor));
-            case ApprovalPayloadBuilder.ORDER_UPDATE_TOOL ->
-                    customerOrderService.updateOrderFromApproval(toOrderUpdateRequest(
-                            approvalRecord,
-                            operation,
-                            actor));
-            default -> throw new IllegalArgumentException("unsupported approval toolName: " + operation.toolName());
-        };
+        try {
+            return switch (operation.toolName()) {
+                case ApprovalPayloadBuilder.PURCHASE_ORDER_CREATE_TOOL ->
+                        purchaseOrderService.createPurchaseOrderFromApproval(toPurchaseOrderCreateRequest(
+                                approvalRecord,
+                                operation,
+                                actor));
+                case ApprovalPayloadBuilder.PURCHASE_ORDER_RECEIVE_TOOL ->
+                        purchaseOrderService.receivePurchaseOrderFromApproval(toPurchaseOrderReceiveRequest(
+                                approvalRecord,
+                                operation,
+                                actor));
+                case ApprovalPayloadBuilder.ORDER_UPDATE_TOOL ->
+                        customerOrderService.updateOrderFromApproval(toOrderUpdateRequest(
+                                approvalRecord,
+                                operation,
+                                actor));
+                default -> throw new IllegalArgumentException("unsupported approval toolName: " + operation.toolName());
+            };
+        } catch (ApprovalPreconditionDriftException e) {
+            throw invalidation(STALE_PRECONDITION, e.getMessage(), e);
+        }
     }
 
     private PurchaseOrderCreateRequest toPurchaseOrderCreateRequest(
@@ -278,22 +306,46 @@ public class ApprovalExecutor {
                 HttpStatus.CONFLICT);
     }
 
+    private ApprovalExecutionOutcome markInvalidatedAfterRollback(
+            String approvalId,
+            TrustedActor actor,
+            String reasonCode,
+            String reason) {
+        ApprovalRecord approvalRecord = approvalRecordMapper.findById(approvalId);
+        if (approvalRecord == null) {
+            return notFound(approvalId);
+        }
+        if (!isSameActor(approvalRecord, actor)) {
+            return notFound(approvalId);
+        }
+        if (isTerminal(approvalRecord)) {
+            return terminal(approvalRecord);
+        }
+        if (!APPROVED.equals(approvalRecord.getStatus())) {
+            return conflict(approvalId, approvalRecord.getStatus(), approvalRecord.getExecutionResult(),
+                    "approval must be approved before execution");
+        }
+        return markInvalidated(approvalRecord, reasonCode, reason);
+    }
+
     private StoredOperation parseStoredOperation(ApprovalRecord approvalRecord) {
         try {
             JsonNode root = objectMapper.readTree(approvalRecord.getOperationPayload());
             if (root == null || !root.isObject()) {
-                throw new IllegalArgumentException("operation payload must be a JSON object");
+                throw invalidation(PAYLOAD_INVALID, "operation payload must be a JSON object");
             }
             JsonNode params = root.get("operationParams");
             if (params == null || !params.isObject()) {
-                throw new IllegalArgumentException("operation payload must contain operationParams");
+                throw invalidation(PAYLOAD_INVALID, "operation payload must contain operationParams");
             }
             return new StoredOperation(
                     requireText(root.get("toolName"), "toolName"),
                     requireText(root.get("operationType"), "operationType"),
                     objectMapper.convertValue(params, MAP_TYPE));
         } catch (JacksonException e) {
-            throw new IllegalArgumentException("operation payload must be valid JSON", e);
+            throw invalidation(PAYLOAD_INVALID, "operation payload must be valid JSON", e);
+        } catch (IllegalArgumentException e) {
+            throw invalidation(PAYLOAD_INVALID, e.getMessage(), e);
         }
     }
 
@@ -336,25 +388,6 @@ public class ApprovalExecutor {
                 HttpStatus.CONFLICT);
     }
 
-    private String invalidationReasonCode(String message) {
-        if (message == null) {
-            return "approval_invalidated";
-        }
-        if (message.contains("hash mismatch")) {
-            return "payload_integrity_failure";
-        }
-        if (message.contains("stale")) {
-            return "stale_precondition";
-        }
-        if (message.contains("does not match")) {
-            return "payload_binding_mismatch";
-        }
-        if (message.contains("JSON") || message.contains("payload")) {
-            return "payload_invalid";
-        }
-        return "approval_invalidated";
-    }
-
     private void validateRequest(String approvalId, TrustedActor actor) {
         if (approvalId == null || approvalId.isBlank()) {
             throw new IllegalArgumentException("approvalId must not be blank");
@@ -393,7 +426,7 @@ public class ApprovalExecutor {
                 if (longValue > 0) {
                     return longValue;
                 }
-            } catch (ArithmeticException e) {
+            } catch (ArithmeticException | NumberFormatException e) {
                 throw new IllegalArgumentException(fieldName + " must be a whole number", e);
             }
         }
@@ -426,6 +459,14 @@ public class ApprovalExecutor {
         }
     }
 
+    private ApprovalInvalidationException invalidation(String reasonCode, String message) {
+        return new ApprovalInvalidationException(reasonCode, message);
+    }
+
+    private ApprovalInvalidationException invalidation(String reasonCode, String message, RuntimeException cause) {
+        return new ApprovalInvalidationException(reasonCode, message, cause);
+    }
+
     private record StoredOperation(
             String toolName,
             String operationType,
@@ -438,5 +479,24 @@ public class ApprovalExecutor {
             String executionResult,
             String message,
             HttpStatus httpStatus) {
+    }
+
+    private static final class ApprovalInvalidationException extends RuntimeException {
+
+        private final String reasonCode;
+
+        private ApprovalInvalidationException(String reasonCode, String message) {
+            super(message);
+            this.reasonCode = reasonCode;
+        }
+
+        private ApprovalInvalidationException(String reasonCode, String message, RuntimeException cause) {
+            super(message, cause);
+            this.reasonCode = reasonCode;
+        }
+
+        private String reasonCode() {
+            return reasonCode;
+        }
     }
 }

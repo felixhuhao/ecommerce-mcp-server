@@ -79,7 +79,8 @@ POST /approvals/{approval_id}/execute     (authenticated; human/FastAPI surface,
   scope. This endpoint is **not** in the agent's tool list either way.
 - **Request body:** none required — the `approval_id` path param is the sole input. The endpoint
   never accepts operation params; the stored payload is authoritative.
-- **Response:** the `execution_result` (and final status). Idempotent replays return the same body.
+- **Response:** the parsed `execution_result` object (and final status). Idempotent replays return
+  the same body.
 
 ### 4.2 Executor contract
 
@@ -111,6 +112,9 @@ POST /approvals/{approval_id}/execute     (authenticated; human/FastAPI surface,
      committed status-only write set `status='failed'`, `executed_at=now`, store the error in
      `execution_result`. Return a typed error. `failed` is terminal — a fresh approval is required to
      retry; the approval never lands in a `consumed` state without a real effect.
+   - **Infrastructure/database error** (`DataAccessException`) → roll back and return HTTP `503`
+     with `reasonCode="infrastructure_error"` and `retryable=true`; leave the approval `approved`
+     so the caller can retry the same `approval_id`.
 
 > The service methods that perform the writes are **retained** from the parent spec; only their
 > *entry point* changes — they are invoked by `ApprovalExecutor` keyed by `approval_id`, not by an
@@ -141,6 +145,9 @@ After this change, `GET`-ting the MCP tool list must show: the read tools, `get_
   `execution_result`; concurrent executes resolve to one winner.
 - **Stale `approved`-but-unexecuted** (R8 limbo): recovered by simply re-calling
   `POST /approvals/{id}/execute` — the endpoint is the recovery path. FastAPI uses bounded retry.
+- **Retryable infrastructure error:** `POST /approvals/{id}/execute` returns `503` with
+  `reasonCode="infrastructure_error"` and `retryable=true`; the row remains `approved`, so the same
+  approval can be retried.
 - **Sweeper:** optional for the MVP; the path is fail-closed (an unexecuted `approved` row does
   nothing until execute is called, and expires on its TTL). A scheduled sweep that marks long-stale
   `approved` rows `expired` may be added later but is not required.

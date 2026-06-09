@@ -139,7 +139,6 @@ public interface ApprovalRecordMapper {
             AND user_id = #{userId}
             AND session_id = #{sessionId}
             AND status = 'approved'
-            AND expires_at > NOW()
             AND consumed_at IS NULL
             """)
     int markConsumed(

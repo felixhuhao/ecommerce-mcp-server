@@ -59,7 +59,7 @@ public class CustomerOrderService {
 
         CustomerOrder order = customerOrderMapper.selectById(request.orderId());
         if (order == null) {
-            throw new IllegalStateException("customer order does not exist: " + request.orderId());
+            throw new ApprovalPreconditionDriftException("customer order does not exist: " + request.orderId());
         }
 
         String newStatus = normalizeStatus(request.newStatus());
@@ -68,7 +68,8 @@ public class CustomerOrderService {
                 order.getStatus(),
                 newStatus);
         if (updatedRows != 1) {
-            throw new IllegalStateException("customer order status could not be updated: " + request.orderId());
+            throw new ApprovalPreconditionDriftException(
+                    "customer order status could not be updated: " + request.orderId());
         }
 
         return OrderUpdateResult.updated(

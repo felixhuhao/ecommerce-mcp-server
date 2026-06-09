@@ -546,7 +546,7 @@ public class ApprovalPayloadBuilder {
                 if (longValue > 0) {
                     return longValue;
                 }
-            } catch (ArithmeticException e) {
+            } catch (ArithmeticException | NumberFormatException e) {
                 throw new IllegalArgumentException(fieldName + " must be a whole number", e);
             }
         }
@@ -561,7 +561,7 @@ public class ApprovalPayloadBuilder {
                 if (intValue > 0) {
                     return intValue;
                 }
-            } catch (ArithmeticException e) {
+            } catch (ArithmeticException | NumberFormatException e) {
                 throw new IllegalArgumentException(fieldName + " must be a whole number", e);
             }
         }
@@ -571,7 +571,11 @@ public class ApprovalPayloadBuilder {
     private BigDecimal requireMoneyParam(Map<String, Object> params, String fieldName) {
         Object value = params.get(fieldName);
         if (value instanceof Number || value instanceof String) {
-            return money(new BigDecimal(value.toString()), fieldName);
+            try {
+                return money(new BigDecimal(value.toString()), fieldName);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(fieldName + " must be positive", e);
+            }
         }
         throw new IllegalArgumentException(fieldName + " must be positive");
     }

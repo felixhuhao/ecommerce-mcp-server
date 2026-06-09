@@ -1,5 +1,6 @@
 package com.ecommerce.agent.controller;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +21,9 @@ import com.ecommerce.agent.service.ApprovalExecutor;
 import com.ecommerce.agent.service.ApprovalExecutor.ApprovalExecutionOutcome;
 import com.ecommerce.agent.service.ApprovalService;
 import com.ecommerce.agent.service.ApprovalService.ApprovalRejectionResult;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/approvals")
@@ -28,14 +32,17 @@ public class ApprovalController {
     private final ApprovalService approvalService;
     private final ApprovalExecutor approvalExecutor;
     private final TrustedActorContext trustedActorContext;
+    private final ObjectMapper objectMapper;
 
     public ApprovalController(
             ApprovalService approvalService,
             ApprovalExecutor approvalExecutor,
-            TrustedActorContext trustedActorContext) {
+            TrustedActorContext trustedActorContext,
+            ObjectMapper objectMapper) {
         this.approvalService = approvalService;
         this.approvalExecutor = approvalExecutor;
         this.trustedActorContext = trustedActorContext;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping("/{approvalId}")
@@ -72,13 +79,30 @@ public class ApprovalController {
     @PostMapping("/{approvalId}/execute")
     public ResponseEntity<ApprovalExecutionResponse> execute(@PathVariable String approvalId) {
         TrustedActor actor = trustedActorContext.requireCurrentActor();
-        ApprovalExecutionOutcome outcome = approvalExecutor.execute(approvalId, actor);
+        ApprovalExecutionOutcome outcome;
+        try {
+            outcome = approvalExecutor.execute(approvalId, actor);
+        } catch (DataAccessException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApprovalExecutionResponse.retryableInfrastructureError(approvalId));
+        }
         ApprovalExecutionResponse response = new ApprovalExecutionResponse(
                 outcome.approvalId(),
                 outcome.status(),
-                outcome.executionResult(),
+                executionResultJson(outcome.executionResult()),
                 outcome.message());
         return ResponseEntity.status(outcome.httpStatus()).body(response);
+    }
+
+    private JsonNode executionResultJson(String executionResult) {
+        if (executionResult == null || executionResult.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(executionResult);
+        } catch (JacksonException e) {
+            throw new IllegalStateException("executionResult must be valid JSON", e);
+        }
     }
 
     private ResponseEntity<ApprovalDecisionResponse> decisionResponse(
