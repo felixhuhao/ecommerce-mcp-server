@@ -1,7 +1,7 @@
 # M2 Companion Change — Backend Execute-by-`approval_id` (Java)
 
 > Java/SpringBoot companion change for the parent **M2 Approved Action Workflow**.
-> Status: Draft | Date: 2026-06-09
+> Status: Implemented in Java scope | Date: 2026-06-09
 > Parent Java spec: [2026-06-05-ecommerce-mcp-server-spec.md](2026-06-05-ecommerce-mcp-server-spec.md)
 > Parent agent design: [../../ecommerce-agent/docs/2026-05-25-ecommerce-agent-design.md](../../ecommerce-agent/docs/2026-05-25-ecommerce-agent-design.md) §5.2
 > Roadmap: [../../ecommerce-agent/docs/2026-06-09-product-roadmap.md](../../ecommerce-agent/docs/2026-06-09-product-roadmap.md) M2 + §5.4, risk R13
@@ -71,9 +71,12 @@ pending → approved → consumed      -- happy path: approved, then executed su
 POST /approvals/{approval_id}/execute     (authenticated; human/FastAPI surface, NOT an MCP tool)
 ```
 
-- **Authentication** identical to the approve/reject endpoints (parent §4.4): the human/approval
-  credential, distinct from the MCP service token, carrying the trusted `user_id`/`session_id`. This
-  endpoint is **not** in the agent's tool list.
+- **Authentication** identical to the approve/reject endpoints (parent §4.4). The implemented scope
+  reuses the **shared `X-Service-Token`** service-auth model, carrying the trusted actor via
+  `X-User-Id`/`X-Session-Id`. A **distinct** human/approval credential — cryptographically separating
+  the approval transition from the agent tool path (parent §4.2) — is a **deferred M4 hardening**
+  item (meaningful once multi-user authenticated console users exist), not implemented in this Java
+  scope. This endpoint is **not** in the agent's tool list either way.
 - **Request body:** none required — the `approval_id` path param is the sole input. The endpoint
   never accepts operation params; the stored payload is authoritative.
 - **Response:** the `execution_result` (and final status). Idempotent replays return the same body.
@@ -170,19 +173,21 @@ Each must produce a typed error and **no business write**, and be auditable:
 
 ## 9. Checklist (Java scope)
 
-- [ ] `ALTER TABLE approval_record` — `execution_result`, `executed_at`; new `invalidated`/`failed`
+- [x] `ALTER TABLE approval_record` — `execution_result`, `executed_at`; new `invalidated`/`failed`
       statuses wired into the status enum/validation.
-- [ ] `ApprovalExecutor` (§4.2) — dispatch by `operation_type` to existing service methods from the
+- [x] `ApprovalExecutor` (§4.2) — dispatch by `operation_type` to existing service methods from the
       stored payload, in a transaction, with the atomic one-time-use claim.
-- [ ] `POST /approvals/{approval_id}/execute` controller endpoint (authenticated, non-MCP), idempotent.
-- [ ] Remove `purchase_order_create` / `purchase_order_receive` / `order_update` `@McpTool`s; retain
+- [x] `POST /approvals/{approval_id}/execute` controller endpoint (authenticated, non-MCP), idempotent.
+- [x] Remove `purchase_order_create` / `purchase_order_receive` / `order_update` `@McpTool`s; retain
       their service methods.
-- [ ] Re-run the §7 negative-case matrix; add executor + tool-list tests.
-- [ ] Update parent Java spec §3/§4/§7 to reflect execute-by-`approval_id` and the removed write
+- [x] Re-run the §7 negative-case matrix; add executor + tool-list tests.
+- [x] Update parent Java spec §3/§4/§7 to reflect execute-by-`approval_id` and the removed write
       tools (or supersede with a pointer to this companion spec).
 
 ## 10. Cross-Repo Coordination
 
-The Python companion spec consumes this change at one seam: FastAPI calls
-`approve` → `execute` against these endpoints with the human/approval credential. Keep the two specs
-cross-linked; land this Java slice (with §7 green) before wiring the Python orchestration.
+The Python companion spec consumes this change at one seam: FastAPI calls `approve` → `execute`
+against these endpoints with the shared `X-Service-Token` plus the acting user's
+`X-User-Id`/`X-Session-Id` (a distinct human/approval credential is deferred to M4 — §4.1). Keep the
+two specs cross-linked. This Java slice is landed (§9 checklist complete, §7 matrix green); the
+Python orchestration can wire against it.
