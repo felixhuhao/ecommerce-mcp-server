@@ -316,7 +316,7 @@ class ApprovalExecutorTest {
         return new PurchaseOrderCreateRequest(
                 approvalId,
                 1L,
-                List.of(new PurchaseOrderCreateItemRequest(2L, 10, new BigDecimal("12.50"))),
+                List.of(new PurchaseOrderCreateItemRequest(2L, 10, new BigDecimal("120.00"))),
                 USER_ID,
                 SESSION_ID);
     }

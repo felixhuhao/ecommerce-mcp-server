@@ -64,7 +64,7 @@ class McpHttpIdentityIntegrationTest {
                 "items", List.of(Map.of(
                         "productId", 2,
                         "quantity", 10,
-                        "unitCost", new BigDecimal("12.50"))));
+                        "unitCost", new BigDecimal("120.00"))));
 
         String responseBody = postJson(
                 """

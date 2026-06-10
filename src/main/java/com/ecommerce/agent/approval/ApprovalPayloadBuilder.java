@@ -289,9 +289,9 @@ public class ApprovalPayloadBuilder {
         }
 
         Integer quantity = requirePositiveIntegerParam(itemParams, "quantity");
-        BigDecimal unitCost = requireMoneyParam(itemParams, "unitCost");
-        BigDecimal subtotal = unitCost.multiply(BigDecimal.valueOf(quantity)).setScale(2);
         Product product = requireActiveProduct(productId);
+        BigDecimal unitCost = canonicalUnitCost(product);
+        BigDecimal subtotal = unitCost.multiply(BigDecimal.valueOf(quantity)).setScale(2);
         Inventory inventory = requireInventory(productId);
 
         Map<String, Object> operationParams = new LinkedHashMap<>();
@@ -327,11 +327,16 @@ public class ApprovalPayloadBuilder {
     }
 
     private Map<String, Object> purchaseOrderCreateItemParams(PurchaseOrderCreateItemRequest item) {
+        Product product = requireActiveProduct(item.productId());
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("productId", item.productId());
         params.put("quantity", item.quantity());
-        params.put("unitCost", money(item.unitCost(), "unitCost"));
+        params.put("unitCost", canonicalUnitCost(product));
         return params;
+    }
+
+    private BigDecimal canonicalUnitCost(Product product) {
+        return money(product.getCost(), "product.cost");
     }
 
     private Map<String, Object> supplierPayloadState(Supplier supplier) {
@@ -563,18 +568,6 @@ public class ApprovalPayloadBuilder {
                 }
             } catch (ArithmeticException | NumberFormatException e) {
                 throw new IllegalArgumentException(fieldName + " must be a whole number", e);
-            }
-        }
-        throw new IllegalArgumentException(fieldName + " must be positive");
-    }
-
-    private BigDecimal requireMoneyParam(Map<String, Object> params, String fieldName) {
-        Object value = params.get(fieldName);
-        if (value instanceof Number || value instanceof String) {
-            try {
-                return money(new BigDecimal(value.toString()), fieldName);
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException(fieldName + " must be positive", e);
             }
         }
         throw new IllegalArgumentException(fieldName + " must be positive");

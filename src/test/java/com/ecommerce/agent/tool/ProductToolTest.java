@@ -24,6 +24,7 @@ class ProductToolTest {
         assertThat(products).hasSizeLessThanOrEqualTo(5);
         assertThat(products.getFirst().productId()).isNotNull();
         assertThat(products.getFirst().name()).isNotBlank();
+        assertThat(products.getFirst().cost()).isNotNull();
     }
 
     @Test

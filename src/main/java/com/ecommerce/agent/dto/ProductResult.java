@@ -9,6 +9,7 @@ public record ProductResult(
         String name,
         String category,
         BigDecimal price,
+        BigDecimal cost,
         String status) {
 
     public static ProductResult from(Product product) {
@@ -17,6 +18,7 @@ public record ProductResult(
                 product.getName(),
                 product.getCategory(),
                 product.getPrice(),
+                product.getCost(),
                 product.getStatus());
     }
 }

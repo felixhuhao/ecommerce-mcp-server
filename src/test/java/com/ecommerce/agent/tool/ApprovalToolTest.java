@@ -38,7 +38,7 @@ class ApprovalToolTest {
                 "items", List.of(Map.of(
                         "productId", 2,
                         "quantity", 50,
-                        "unitCost", new BigDecimal("12.50"))));
+                        "unitCost", new BigDecimal("120.00"))));
 
         ApprovalResponse response = trustedActorContext.runAs(1L, "test-session", () -> approvalTool.requestApproval(
                 "purchase_order_create",
@@ -54,6 +54,8 @@ class ApprovalToolTest {
         assertThat(response.status()).isEqualTo("pending");
         assertThat(json(response.operationPayload()).get("operationParams").get("supplierId").asInt())
                 .isEqualTo(1);
+        assertThat(json(response.operationPayload()).get("operationParams").get("items").get(0).get("unitCost").decimalValue())
+                .isEqualByComparingTo("120.00");
         assertThat(json(response.operationPayload()).get("currentState").get("supplier").get("supplierId").asInt())
                 .isEqualTo(1);
         assertThat(json(response.operationPayload()).get("currentState").get("items").get(0).get("product").get("status").asString())
@@ -61,11 +63,52 @@ class ApprovalToolTest {
         assertThat(json(response.operationPayload()).get("currentState").get("items").get(0).has("inventory"))
                 .isFalse();
         assertThat(json(response.operationPayload()).get("currentState").get("totalCost").decimalValue())
-                .isEqualByComparingTo("625.00");
+                .isEqualByComparingTo("6000.00");
         assertThat(json(response.operationDetail()).get("title").asString())
                 .isEqualTo("Create purchase order");
         assertThat(json(response.operationDetail()).get("currentState").get("items").get(0).get("inventory").get("quantity").isNumber())
                 .isTrue();
+    }
+
+    @Test
+    void requestApprovalCanonicalizesMissingUnitCostFromProductCost() throws JacksonException {
+        Map<String, Object> operationParams = Map.of(
+                "supplierId", 1,
+                "items", List.of(Map.of(
+                        "productId", 2,
+                        "quantity", 10)));
+
+        ApprovalResponse response = trustedActorContext.runAs(1L, "test-session", () -> approvalTool.requestApproval(
+                "purchase_order_create",
+                "create",
+                operationParams));
+
+        JsonNode operationPayload = json(response.operationPayload());
+        assertThat(operationPayload.get("operationParams").get("items").get(0).get("unitCost").decimalValue())
+                .isEqualByComparingTo("120.00");
+        assertThat(operationPayload.get("currentState").get("totalCost").decimalValue())
+                .isEqualByComparingTo("1200.00");
+    }
+
+    @Test
+    void requestApprovalNormalizesSuppliedUnitCostFromProductCost() throws JacksonException {
+        Map<String, Object> operationParams = Map.of(
+                "supplierId", 1,
+                "items", List.of(Map.of(
+                        "productId", 2,
+                        "quantity", 10,
+                        "unitCost", new BigDecimal("12.50"))));
+
+        ApprovalResponse response = trustedActorContext.runAs(1L, "test-session", () -> approvalTool.requestApproval(
+                "purchase_order_create",
+                "create",
+                operationParams));
+
+        JsonNode operationPayload = json(response.operationPayload());
+        assertThat(operationPayload.get("operationParams").get("items").get(0).get("unitCost").decimalValue())
+                .isEqualByComparingTo("120.00");
+        assertThat(operationPayload.get("currentState").get("totalCost").decimalValue())
+                .isEqualByComparingTo("1200.00");
     }
 
     @Test
@@ -93,8 +136,8 @@ class ApprovalToolTest {
         Map<String, Object> operationParams = Map.of(
                 "supplierId", 1,
                 "items", List.of(
-                        Map.of("productId", 2, "quantity", 10, "unitCost", new BigDecimal("12.50")),
-                        Map.of("productId", 2, "quantity", 5, "unitCost", new BigDecimal("12.50"))));
+                        Map.of("productId", 2, "quantity", 10, "unitCost", new BigDecimal("120.00")),
+                        Map.of("productId", 2, "quantity", 5, "unitCost", new BigDecimal("120.00"))));
 
         assertThatThrownBy(() -> trustedActorContext.runAs(1L, "test-session", () -> approvalTool.requestApproval(
                 "purchase_order_create",
