@@ -327,11 +327,12 @@ public class ApprovalPayloadBuilder {
     }
 
     private Map<String, Object> purchaseOrderCreateItemParams(PurchaseOrderCreateItemRequest item) {
-        Product product = requireActiveProduct(item.productId());
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("productId", item.productId());
         params.put("quantity", item.quantity());
-        params.put("unitCost", canonicalUnitCost(product));
+        if (item.unitCost() != null) {
+            params.put("unitCost", item.unitCost());
+        }
         return params;
     }
 
