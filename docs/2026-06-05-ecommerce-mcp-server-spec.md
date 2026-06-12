@@ -230,6 +230,15 @@ Current implementation: `TrustedActorFilter` requires a service-authenticated
 real user session and is responsible for forwarding these trusted headers; the Agent never sees
 or fills them as tool parameters.
 
+**Gateway trust boundary:** FastAPI authenticates human operators with its own HttpOnly session
+cookie, resolves the real operator identity, and forwards the corresponding `spring_user_id` as
+`X-User-Id` plus the conversation id as `X-Session-Id`. Spring trusts only callers with a valid
+`X-Service-Token`; it treats `X-User-Id` / `X-Session-Id` as the trusted actor binding for that
+service-authenticated request. Approval records are owned by the `(userId, sessionId)` pair, and
+every read, approve/reject transition, and execute attempt is scoped through the same
+`isSameActor` check. The FastAPI gateway no longer sends a fixed `"1"` user id; it forwards the
+authenticated operator's Spring user id on MCP tools and approval REST calls.
+
 Deployment note: the token used to call MCP tools should not be exposed to Agent-generated code
 or sandbox networking. For production, prefer separate credentials for the MCP tool surface and
 the human approval REST surface (or a human JWT for `/approvals/**`) so the approval transition is

@@ -128,6 +128,48 @@ class ApprovalControllerTest {
     }
 
     @Test
+    void crossActorCannotReadTransitionOrExecuteApproval() throws Exception {
+        ApprovalRecord pendingApproval = createPendingApproval("test-session");
+
+        mockMvc.perform(get("/approvals/{approvalId}", pendingApproval.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
+                .header("X-User-Id", "2")
+                .header("X-Session-Id", "test-session"))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/approvals/{approvalId}/approve", pendingApproval.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
+                .header("X-User-Id", "2")
+                .header("X-Session-Id", "test-session"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.changed").value(false));
+
+        mockMvc.perform(get("/approvals/{approvalId}", pendingApproval.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
+                .header("X-User-Id", "1")
+                .header("X-Session-Id", "test-session"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("pending"));
+
+        ApprovalRecord executableApproval = createPendingPurchaseOrderCreateApproval("test-session");
+        approvalService.approve(executableApproval.getApprovalId(), 1L, "test-session");
+
+        mockMvc.perform(post("/approvals/{approvalId}/execute", executableApproval.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
+                .header("X-User-Id", "2")
+                .header("X-Session-Id", "test-session"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value("not_found"));
+
+        mockMvc.perform(get("/approvals/{approvalId}", executableApproval.getApprovalId())
+                .header("X-Service-Token", SERVICE_TOKEN)
+                .header("X-User-Id", "1")
+                .header("X-Session-Id", "test-session"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("approved"));
+    }
+
+    @Test
     void executeApprovedApprovalRunsStoredPayload() throws Exception {
         ApprovalRecord approvalRecord = createPendingPurchaseOrderCreateApproval("test-session");
         approvalService.approve(approvalRecord.getApprovalId(), 1L, "test-session");
