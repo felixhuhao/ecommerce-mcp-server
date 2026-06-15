@@ -14,6 +14,7 @@ public interface ProductMapper {
     @Select("""
             SELECT
                 product_id,
+                sku,
                 name,
                 category,
                 price,
@@ -29,6 +30,7 @@ public interface ProductMapper {
     @Select("""
             SELECT
                 product_id,
+                sku,
                 name,
                 category,
                 price,
@@ -46,6 +48,7 @@ public interface ProductMapper {
     @Select("""
             SELECT
                 product_id,
+                sku,
                 name,
                 category,
                 price,
@@ -56,7 +59,8 @@ public interface ProductMapper {
             FROM product
             WHERE status = 'active'
             AND (
-                name LIKE CONCAT('%', #{keyword}, '%')
+                sku LIKE CONCAT('%', #{keyword}, '%')
+                OR name LIKE CONCAT('%', #{keyword}, '%')
                 OR category LIKE CONCAT('%', #{keyword}, '%')
             )
             ORDER BY product_id

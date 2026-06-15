@@ -6,6 +6,8 @@ import com.ecommerce.agent.domain.Inventory;
 
 public record InventoryResult(
         Long productId,
+        String sku,
+        String productName,
         Integer quantity,
         Integer safetyStock,
         String warehouse,
@@ -14,6 +16,8 @@ public record InventoryResult(
     public static InventoryResult from(Inventory inventory) {
         return new InventoryResult(
                 inventory.getProductId(),
+                inventory.getSku(),
+                inventory.getProductName(),
                 inventory.getQuantity(),
                 inventory.getSafetyStock(),
                 inventory.getWarehouse(),

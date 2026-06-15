@@ -6,7 +6,7 @@ Detailed design lives in [docs/2026-06-05-ecommerce-mcp-server-spec.md](docs/202
 
 ## What This Service Owns
 
-- Product, inventory, customer, order, supplier, and purchase-order queries
+- Product/SKU, inventory, customer, order, supplier, and purchase-order queries
 - Supplier purchase-order creation and receiving
 - Customer order fulfillment status updates
 - Server-side approval payload generation, hashing, binding, expiry, and one-time consumption
@@ -80,7 +80,7 @@ mysql -u root -p < src/main/resources/schema.sql
 mysql -u root -p ecommerce_db < src/main/resources/data.sql
 ```
 
-`schema.sql` creates the database if needed. `data.sql` seeds products, users, suppliers, inventory, orders, purchase orders, reviews, and approval tables.
+`schema.sql` creates the database if needed. `data.sql` seeds products, SKUs, users, suppliers, inventory, orders, purchase orders, reviews, and approval tables. Loading both files resets the local demo database.
 
 ## Run Tests
 
@@ -184,6 +184,9 @@ POST /approvals/{id}/reject
 Approval records default to a 15-minute TTL. Expired open approvals are lazily marked `expired` when read, approved/rejected, or consumed.
 
 ## Statistics Semantics
+
+`product_query` and `product_search` match active products by SKU, product name, or category.
+Inventory reads return SKU and product name alongside stock quantities.
 
 `get_statistics` returns aggregation-first data for:
 

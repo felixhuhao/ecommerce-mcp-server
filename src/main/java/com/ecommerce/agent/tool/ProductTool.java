@@ -18,9 +18,9 @@ public class ProductTool {
         this.productService = productService;
     }
 
-    @McpTool(name = "product_query", description = "Query active products with an optional keyword.")
+    @McpTool(name = "product_query", description = "Query active products with an optional SKU, name, or category keyword.")
     public List<ProductResult> productQuery(
-            @McpToolParam(required = false, description = "Product name or category keyword.") String keyword,
+            @McpToolParam(required = false, description = "Product SKU, name, or category keyword.") String keyword,
             @McpToolParam(required = false, description = "Maximum number of products to return.") Integer limit) {
         return productService.searchActiveProducts(keyword, limit)
                 .stream()
@@ -28,9 +28,9 @@ public class ProductTool {
                 .toList();
     }
 
-    @McpTool(name = "product_search", description = "Search active products by product name or category.")
+    @McpTool(name = "product_search", description = "Search active products by SKU, product name, or category.")
     public List<ProductResult> productSearch(
-            @McpToolParam(description = "Product name or category keyword.") String keyword,
+            @McpToolParam(description = "Product SKU, name, or category keyword.") String keyword,
             @McpToolParam(required = false, description = "Maximum number of products to return.") Integer limit) {
         return productService.searchActiveProducts(keyword, limit)
                 .stream()

@@ -6,6 +6,8 @@ import com.ecommerce.agent.domain.Inventory;
 
 public record InventoryLowStockResult(
         Long productId,
+        String sku,
+        String productName,
         Integer quantity,
         Integer safetyStock,
         Integer shortage,
@@ -15,6 +17,8 @@ public record InventoryLowStockResult(
     public static InventoryLowStockResult from(Inventory inventory) {
         return new InventoryLowStockResult(
                 inventory.getProductId(),
+                inventory.getSku(),
+                inventory.getProductName(),
                 inventory.getQuantity(),
                 inventory.getSafetyStock(),
                 inventory.getSafetyStock() - inventory.getQuantity(),

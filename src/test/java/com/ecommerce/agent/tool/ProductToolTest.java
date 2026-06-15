@@ -23,6 +23,7 @@ class ProductToolTest {
         assertThat(products).isNotEmpty();
         assertThat(products).hasSizeLessThanOrEqualTo(5);
         assertThat(products.getFirst().productId()).isNotNull();
+        assertThat(products.getFirst().sku()).isNotBlank();
         assertThat(products.getFirst().name()).isNotBlank();
         assertThat(products.getFirst().cost()).isNotNull();
     }
@@ -35,6 +36,14 @@ class ProductToolTest {
         assertThat(products)
                 .allMatch(product -> product.name().contains("手机")
                         || product.category().contains("手机"));
+    }
+
+    @Test
+    void productSearchMatchesSku() {
+        List<ProductResult> products = productTool.productSearch("SKU-119", 10);
+
+        assertThat(products).extracting(ProductResult::sku).contains("SKU-119");
+        assertThat(products).extracting(ProductResult::productId).contains(9L);
     }
 
     @Test

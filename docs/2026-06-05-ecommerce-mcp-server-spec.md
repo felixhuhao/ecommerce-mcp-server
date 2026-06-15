@@ -70,7 +70,7 @@ orders are the procurement write path.
 
 | Table | Purpose | Key Fields |
 |-------|---------|------------|
-| product | Product catalog | product_id, name, category, price, cost, status |
+| product | Product catalog | product_id, sku, name, category, price, cost, status |
 | orders | Customer sales orders | order_id, user_id, total_amount, status, created_at, paid_at |
 | order_item | Sales order line items | item_id, order_id, product_id, quantity, unit_price |
 | user | Customer accounts | user_id, username, phone, email, level, registered_at |
@@ -96,10 +96,10 @@ Relationships:
 - purchase_order_item.po_id → purchase_order.po_id
 - purchase_order_item.product_id → product.product_id
 
-Sample data (seeded): 50+ products across 5+ categories, 200+ customer orders over 6 months,
-30+ users with varying levels, 10+ suppliers. The `purchase_order` / `purchase_order_item`
-tables and `approval_record` are in `schema.sql`, with a few historical received POs seeded for
-analytics.
+Sample data (seeded): 50+ products with stable SKUs across 5+ categories, 200+ customer orders over
+6+ months, 30+ users with varying levels, 10+ suppliers. The `purchase_order` /
+`purchase_order_item` tables and `approval_record` are in `schema.sql`, with historical received POs
+and curated demo rows seeded for analytics.
 
 ### 2.2 Approval Table
 
@@ -144,11 +144,11 @@ served here — they belong to the ModelScope and Python MCP servers (see parent
 
 | MCP Tool | Type | Service Method | Description |
 |----------|------|----------------|-------------|
-| product_query | Read | ProductService.page | Query product catalog with pagination and category filter |
-| product_search | Read | ProductService.search | Search products by name (fuzzy) |
+| product_query | Read | ProductService.page/search | Query active products with an optional SKU/name/category keyword |
+| product_search | Read | ProductService.search | Search active products by SKU, name, or category |
 | order_query | Read | OrderService.searchDetails | Search customer sales orders + items with date/product filters |
-| inventory_query | Read | InventoryService.query | Query inventory levels for products/warehouses |
-| inventory_low_stock | Read | InventoryService.findLowStockItems | List items below safety stock |
+| inventory_query | Read | InventoryService.query | Query inventory levels for products/warehouses, returning SKU and product name |
+| inventory_low_stock | Read | InventoryService.findLowStockItems | List items below safety stock, returning SKU and product name |
 | user_query | Read | UserService.query | Query customer accounts (by name/level/id) |
 | supplier_query | Read | SupplierService.search | Search suppliers by name (fuzzy) |
 | supplier_top | Read | SupplierService.findTopSuppliers | List top suppliers by rating and lead time |

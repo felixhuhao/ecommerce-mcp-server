@@ -1,5 +1,5 @@
 -- ecommerce_db Schema
--- Generated: 2026-06-06 00:08:38
+-- Generated: 2026-06-15 16:24:31
 
 SET NAMES utf8mb4;
 
@@ -10,6 +10,7 @@ USE ecommerce_db;
 DROP TABLE IF EXISTS `product`;
 CREATE TABLE `product` (
   `product_id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '商品ID',
+  `sku` VARCHAR(40) NOT NULL COMMENT 'SKU编码',
   `name` VARCHAR(100) NOT NULL COMMENT '商品名称',
   `category` VARCHAR(50) NOT NULL COMMENT '品类: electronics/clothing/home/food/sports',
   `price` DECIMAL(10,2) NOT NULL COMMENT '售价',
@@ -18,6 +19,8 @@ CREATE TABLE `product` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`product_id`),
+  UNIQUE KEY `uk_product_sku` (`sku`),
+  KEY `idx_product_name` (`name`),
   KEY `idx_category` (`category`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
@@ -150,13 +153,13 @@ CREATE TABLE `approval_record` (
   `user_id` BIGINT NOT NULL COMMENT '绑定的用户ID',
   `session_id` VARCHAR(64) NOT NULL COMMENT '绑定的会话ID',
   `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态: pending/approved/rejected/expired/consumed/invalidated/failed',
-  `rejection_reason` TEXT DEFAULT NULL COMMENT '拒绝原因',
-  `execution_result` JSON DEFAULT NULL COMMENT '后端执行结果或失败/失效原因',
+  `rejection_reason` VARCHAR(500) DEFAULT NULL COMMENT '拒绝原因',
+  `execution_result` JSON DEFAULT NULL COMMENT '执行结果',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `expires_at` DATETIME NOT NULL COMMENT '过期时间',
   `rejected_at` DATETIME DEFAULT NULL COMMENT '拒绝时间',
   `consumed_at` DATETIME DEFAULT NULL COMMENT '消费时间',
-  `executed_at` DATETIME DEFAULT NULL COMMENT '执行完成时间',
+  `executed_at` DATETIME DEFAULT NULL COMMENT '执行时间',
   PRIMARY KEY (`approval_id`),
   KEY `idx_status` (`status`),
   KEY `idx_user_session` (`user_id`, `session_id`),

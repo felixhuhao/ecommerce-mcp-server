@@ -13,6 +13,7 @@ import lombok.ToString;
 @ToString
 public class Product {
     private Long productId;
+    private String sku;
     private String name;
     private String category;
     private BigDecimal price;

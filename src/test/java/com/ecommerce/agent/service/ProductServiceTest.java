@@ -24,7 +24,8 @@ class ProductServiceTest {
         assertThat(products).hasSizeLessThanOrEqualTo(10);
         assertThat(products)
                 .allMatch(product -> product.getName().contains("手机")
-                        || product.getCategory().contains("手机"));
+                        || product.getCategory().contains("手机")
+                        || product.getSku().contains("手机"));
     }
 
     @Test

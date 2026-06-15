@@ -5,6 +5,20 @@ from pathlib import Path
 
 random.seed(42)
 
+HERO_PRODUCT_OVERRIDES = {
+    3: ("SKU-LOW-003", "快充充电器 / Fast Charger", "active"),
+    9: ("SKU-119", "移动电源 / Power Bank", "active"),
+    21: ("SKU-LOW-021", "LED台灯 / LED Desk Lamp", "active"),
+    41: ("SKU-OK-042", "瑜伽垫 / Yoga Mat", "active"),
+}
+
+HERO_INVENTORY = {
+    3: (12, 80, "A区"),
+    9: (410, 51, "B区"),
+    21: (18, 60, "A区"),
+    41: (220, 40, "C区"),
+}
+
 # === Products ===
 categories = {
     'electronics': [
@@ -43,9 +57,14 @@ pid = 1
 products = []
 for cat, items in categories.items():
     for name, price, cost in items:
+        sku = f"SKU-{pid:03d}"
         status = random.choices(['active', 'active', 'active', 'inactive'], k=1)[0]
-        products.append((pid, name, cat, price, cost, status))
+        if pid in HERO_PRODUCT_OVERRIDES:
+            sku, name, status = HERO_PRODUCT_OVERRIDES[pid]
+        products.append((pid, sku, name, cat, price, cost, status))
         pid += 1
+
+products_by_id = {product[0]: product for product in products}
 
 # === Suppliers ===
 suppliers_raw = [
@@ -65,8 +84,16 @@ suppliers_raw = [
 
 suppliers = []
 for i, (name, contact, phone, addr, email) in enumerate(suppliers_raw, 1):
+    if i == 7:
+        name = '深圳华强电子供应链 / Shenzhen Huaqiang Electronics Supply'
+        contact = '黄强'
+        addr = '深圳市福田区华强北路7号'
+        email = 'supply@hq-electronics.com'
     rating = round(random.uniform(3.5, 5.0), 1)
     lead = random.choice([1, 2, 3, 3, 5, 5, 7])
+    if i == 7:
+        rating = 4.8
+        lead = 3
     suppliers.append((i, name, contact, phone, addr, email, rating, lead))
 
 # === Users ===
@@ -91,10 +118,13 @@ for i in range(1, 41):
 # === Inventory ===
 inventory = []
 for prod in products:
-    pid_val, _, _, _, _, _ = prod
-    qty = random.randint(0, 500)
-    safety = random.randint(20, 100)
-    wh = random.choice(['A区', 'B区', 'C区'])
+    pid_val = prod[0]
+    if pid_val in HERO_INVENTORY:
+        qty, safety, wh = HERO_INVENTORY[pid_val]
+    else:
+        qty = random.randint(0, 500)
+        safety = random.randint(20, 100)
+        wh = random.choice(['A区', 'B区', 'C区'])
     inventory.append((pid_val, qty, safety, wh))
 
 # === Orders + Order Items ===
@@ -122,7 +152,7 @@ for _ in range(250):
 
     total = 0.0
     for prod in selected:
-        pid_val, pname, cat, price, cost, _ = prod
+        pid_val, _, pname, cat, price, cost, _ = prod
         qty = random.choices([1, 2, 3, 4, 5, 10], weights=[40, 25, 15, 10, 5, 5], k=1)[0]
         unit_price = round(price * random.choice([0.9, 0.95, 1.0, 1.0, 1.0]), 2)
         subtotal = round(unit_price * qty, 2)
@@ -139,6 +169,70 @@ for _ in range(250):
     orders.append((oid, uid, total, status,
                     created.strftime('%Y-%m-%d %H:%M:%S'), paid, shipped, completed, cancelled))
     oid += 1
+
+def add_order(order_id, user_id, status, created, item_specs):
+    global oiid, oid
+    total = 0.0
+    order_rows = []
+    for product_id, qty, price_multiplier in item_specs:
+        product = products_by_id[product_id]
+        unit_price = round(product[4] * price_multiplier, 2)
+        subtotal = round(unit_price * qty, 2)
+        total += subtotal
+        order_rows.append((oiid, order_id, product_id, qty, unit_price, subtotal))
+        oiid += 1
+
+    paid = created + timedelta(hours=2) if status in ['paid', 'shipped', 'completed'] else None
+    shipped = created + timedelta(days=2) if status in ['shipped', 'completed'] else None
+    completed = created + timedelta(days=6) if status == 'completed' else None
+    cancelled = created + timedelta(hours=6) if status == 'cancelled' else None
+    orders.append((
+        order_id,
+        user_id,
+        round(total, 2),
+        status,
+        created.strftime('%Y-%m-%d %H:%M:%S'),
+        paid.strftime('%Y-%m-%d %H:%M:%S') if paid else None,
+        shipped.strftime('%Y-%m-%d %H:%M:%S') if shipped else None,
+        completed.strftime('%Y-%m-%d %H:%M:%S') if completed else None,
+        cancelled.strftime('%Y-%m-%d %H:%M:%S') if cancelled else None,
+    ))
+    order_items.extend(order_rows)
+    oid = max(oid, order_id + 1)
+
+
+# Curated sales trend for SKU-119 across nine months.
+for index, (year, month, qty) in enumerate([
+        (2025, 9, 18),
+        (2025, 10, 22),
+        (2025, 11, 25),
+        (2025, 12, 30),
+        (2026, 1, 34),
+        (2026, 2, 38),
+        (2026, 3, 42),
+        (2026, 4, 47),
+        (2026, 5, 53),
+]):
+    add_order(
+        800 + index,
+        7,
+        'completed',
+        datetime(year, month, 15, 10, 30),
+        [(9, qty, 1.0)],
+    )
+
+# Customer-insights hero rows.
+add_order(812, 12, 'completed', datetime(2026, 5, 8, 14, 20), [(1, 2, 1.0), (9, 8, 0.95)])
+for index, day in enumerate([2, 8, 14, 20, 26, 28]):
+    add_order(820 + index, 23, 'completed', datetime(2026, 5, day, 12, 0), [(5, 2, 1.0)])
+for index, month in enumerate([1, 2, 3]):
+    add_order(830 + index, 31, 'completed', datetime(2025, month, 9, 11, 15), [(41, 1, 1.0)])
+
+# Order-manager hero rows with memorable ids.
+add_order(1007, 7, 'paid', datetime(2026, 6, 5, 9, 30), [(9, 2, 1.0), (3, 1, 1.0)])
+add_order(1008, 23, 'pending', datetime(2026, 6, 6, 10, 0), [(21, 1, 1.0)])
+add_order(1009, 12, 'completed', datetime(2026, 5, 25, 15, 45), [(1, 1, 0.95)])
+add_order(1010, 31, 'cancelled', datetime(2026, 6, 7, 16, 10), [(41, 2, 1.0)])
 
 # === Reviews ===
 reviews = []
@@ -177,7 +271,7 @@ for _ in range(12):
     total_cost = 0.0
 
     for prod in selected:
-        pid_val, _, _, _, cost, _ = prod
+        pid_val, _, _, _, _, cost, _ = prod
         qty = random.choice([50, 80, 100, 150, 200, 300])
         unit_cost = round(cost * random.choice([0.95, 1.0, 1.0, 1.05]), 2)
         subtotal = round(unit_cost * qty, 2)
@@ -196,6 +290,20 @@ for _ in range(12):
     ))
     poid += 1
 
+# Placed PO for receive-flow demos.
+purchase_orders.append((
+    1001,
+    7,
+    'placed',
+    5000.00,
+    '2026-06-01 10:00:00',
+    None,
+    None,
+))
+purchase_order_items.append((poiid, 1001, 3, 200, 25.00, 5000.00))
+poiid += 1
+poid = max(poid, 1002)
+
 # === Write schema.sql ===
 out_dir = Path(__file__).resolve().parent / 'src' / 'main' / 'resources'
 
@@ -211,6 +319,7 @@ USE ecommerce_db;
 DROP TABLE IF EXISTS `product`;
 CREATE TABLE `product` (
   `product_id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '商品ID',
+  `sku` VARCHAR(40) NOT NULL COMMENT 'SKU编码',
   `name` VARCHAR(100) NOT NULL COMMENT '商品名称',
   `category` VARCHAR(50) NOT NULL COMMENT '品类: electronics/clothing/home/food/sports',
   `price` DECIMAL(10,2) NOT NULL COMMENT '售价',
@@ -219,6 +328,8 @@ CREATE TABLE `product` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`product_id`),
+  UNIQUE KEY `uk_product_sku` (`sku`),
+  KEY `idx_product_name` (`name`),
   KEY `idx_category` (`category`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
@@ -351,9 +462,13 @@ CREATE TABLE `approval_record` (
   `user_id` BIGINT NOT NULL COMMENT '绑定的用户ID',
   `session_id` VARCHAR(64) NOT NULL COMMENT '绑定的会话ID',
   `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态: pending/approved/rejected/expired/consumed/invalidated/failed',
+  `rejection_reason` VARCHAR(500) DEFAULT NULL COMMENT '拒绝原因',
+  `execution_result` JSON DEFAULT NULL COMMENT '执行结果',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `expires_at` DATETIME NOT NULL COMMENT '过期时间',
+  `rejected_at` DATETIME DEFAULT NULL COMMENT '拒绝时间',
   `consumed_at` DATETIME DEFAULT NULL COMMENT '消费时间',
+  `executed_at` DATETIME DEFAULT NULL COMMENT '执行时间',
   PRIMARY KEY (`approval_id`),
   KEY `idx_status` (`status`),
   KEY `idx_user_session` (`user_id`, `session_id`),
@@ -366,7 +481,7 @@ lines = ['SET NAMES utf8mb4;', '', 'USE ecommerce_db;', '']
 
 lines.append('-- Products')
 for p in products:
-    lines.append(f"INSERT INTO `product` VALUES ({p[0]}, '{p[1]}', '{p[2]}', {p[3]}, {p[4]}, '{p[5]}', NOW(), NOW());")
+    lines.append(f"INSERT INTO `product` VALUES ({p[0]}, '{p[1]}', '{p[2]}', '{p[3]}', {p[4]}, {p[5]}, '{p[6]}', NOW(), NOW());")
 lines.append('')
 
 lines.append('-- Users')

@@ -14,26 +14,32 @@ public interface InventoryMapper {
 
     @Select("""
             SELECT
-                product_id,
-                quantity,
-                safety_stock,
-                warehouse,
-                updated_at
-            FROM inventory
-            WHERE product_id = #{productId}
+                i.product_id,
+                p.sku,
+                p.name AS product_name,
+                i.quantity,
+                i.safety_stock,
+                i.warehouse,
+                i.updated_at
+            FROM inventory i
+            JOIN product p ON p.product_id = i.product_id
+            WHERE i.product_id = #{productId}
             """)
     Inventory findByProductId(@Param("productId") Long productId);
 
     @Select("""
             SELECT
-                product_id,
-                quantity,
-                safety_stock,
-                warehouse,
-                updated_at
-            FROM inventory
-            WHERE quantity < safety_stock
-            ORDER BY (safety_stock - quantity) DESC
+                i.product_id,
+                p.sku,
+                p.name AS product_name,
+                i.quantity,
+                i.safety_stock,
+                i.warehouse,
+                i.updated_at
+            FROM inventory i
+            JOIN product p ON p.product_id = i.product_id
+            WHERE i.quantity < i.safety_stock
+            ORDER BY (i.safety_stock - i.quantity) DESC
             LIMIT #{limit}
             """)
     List<Inventory> findLowStockItems(@Param("limit") Integer limit);
@@ -41,20 +47,23 @@ public interface InventoryMapper {
     @Select("""
             <script>
             SELECT
-                product_id,
-                quantity,
-                safety_stock,
-                warehouse,
-                updated_at
-            FROM inventory
+                i.product_id,
+                p.sku,
+                p.name AS product_name,
+                i.quantity,
+                i.safety_stock,
+                i.warehouse,
+                i.updated_at
+            FROM inventory i
+            JOIN product p ON p.product_id = i.product_id
             WHERE 1 = 1
             <if test="productId != null">
-                AND product_id = #{productId}
+                AND i.product_id = #{productId}
             </if>
             <if test="warehouse != null and warehouse != ''">
-                AND warehouse = #{warehouse}
+                AND i.warehouse = #{warehouse}
             </if>
-            ORDER BY product_id, warehouse
+            ORDER BY i.product_id, i.warehouse
             LIMIT #{limit}
             </script>
             """)

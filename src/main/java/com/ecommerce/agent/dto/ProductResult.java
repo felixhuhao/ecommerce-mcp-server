@@ -6,6 +6,7 @@ import com.ecommerce.agent.domain.Product;
 
 public record ProductResult(
         Long productId,
+        String sku,
         String name,
         String category,
         BigDecimal price,
@@ -15,6 +16,7 @@ public record ProductResult(
     public static ProductResult from(Product product) {
         return new ProductResult(
                 product.getProductId(),
+                product.getSku(),
                 product.getName(),
                 product.getCategory(),
                 product.getPrice(),

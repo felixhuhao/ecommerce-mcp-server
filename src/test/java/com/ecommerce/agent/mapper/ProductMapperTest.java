@@ -23,6 +23,7 @@ class ProductMapperTest {
         assertThat(products).isNotEmpty();
         assertThat(products).hasSizeLessThanOrEqualTo(5);
         assertThat(products.getFirst().getProductId()).isNotNull();
+        assertThat(products.getFirst().getSku()).isNotBlank();
         assertThat(products.getFirst().getName()).isNotBlank();
     }
 
@@ -35,5 +36,12 @@ class ProductMapperTest {
         assertThat(products)
                 .allMatch(product -> product.getName().contains("手机")
                         || product.getCategory().contains("手机"));
+    }
+
+    @Test
+    void searchActiveProductsMatchesSku() {
+        List<Product> products = productMapper.searchActiveProducts("SKU-119", 10);
+
+        assertThat(products).extracting(Product::getSku).contains("SKU-119");
     }
 }

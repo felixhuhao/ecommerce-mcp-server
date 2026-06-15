@@ -13,6 +13,8 @@ import lombok.ToString;
 @ToString
 public class Inventory {
     private Long productId;
+    private String sku;
+    private String productName;
     private Integer quantity;
     private Integer safetyStock;
     private String warehouse;

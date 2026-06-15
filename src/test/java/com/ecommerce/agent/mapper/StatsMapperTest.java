@@ -84,6 +84,7 @@ class StatsMapperTest {
         jdbcTemplate.update("""
                 INSERT INTO product (
                     product_id,
+                    sku,
                     name,
                     category,
                     price,
@@ -91,8 +92,8 @@ class StatsMapperTest {
                     status,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, 'electronics', 9999.00, 1000.00, 'active', NOW(), NOW())
-                """, productId, name);
+                ) VALUES (?, ?, ?, 'electronics', 9999.00, 1000.00, 'active', NOW(), NOW())
+                """, productId, "SKU-" + productId, name);
     }
 
     private void insertOrder(Long orderId, String status) {
