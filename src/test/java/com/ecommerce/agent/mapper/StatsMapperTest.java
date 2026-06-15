@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ecommerce.agent.dto.InventoryStatistics;
 import com.ecommerce.agent.dto.OrderStatusStatistics;
 import com.ecommerce.agent.dto.ProductCategoryStatistics;
+import com.ecommerce.agent.dto.SalesCategoryStatistics;
+import com.ecommerce.agent.dto.TopCustomerSpendStatistics;
 import com.ecommerce.agent.dto.TopProductSalesStatistics;
 
 @SpringBootTest
@@ -78,6 +80,59 @@ class StatsMapperTest {
 
         assertThat(topProducts)
                 .noneMatch(product -> product.productId().equals(999001L));
+    }
+
+    @Test
+    void topCustomerSpendStatisticsHonorsLimit() {
+        List<TopCustomerSpendStatistics> topCustomers = statsMapper.topCustomerSpendStatistics(3);
+
+        assertThat(topCustomers).isNotEmpty();
+        assertThat(topCustomers).hasSizeLessThanOrEqualTo(3);
+        assertThat(topCustomers)
+                .allMatch(customer -> customer.userId() != null
+                        && customer.username() != null
+                        && customer.orderCount() > 0
+                        && customer.totalSpend().compareTo(BigDecimal.ZERO) > 0);
+    }
+
+    @Test
+    void topCustomerSpendStatisticsExcludesUnrealizedOrders() {
+        insertOrder(999003L, "cancelled");
+        insertOrder(999004L, "pending");
+
+        List<TopCustomerSpendStatistics> topCustomers = statsMapper.topCustomerSpendStatistics(20);
+
+        assertThat(topCustomers)
+                .noneMatch(customer -> customer.totalSpend().compareTo(new BigDecimal("99999999.00")) >= 0);
+    }
+
+    @Test
+    void salesCategoryStatisticsGroupsRevenueByCategory() {
+        List<SalesCategoryStatistics> sales = statsMapper.salesCategoryStatistics();
+
+        assertThat(sales).isNotEmpty();
+        assertThat(sales)
+                .allMatch(row -> row.category() != null
+                        && row.unitsSold() > 0
+                        && row.totalSales().compareTo(BigDecimal.ZERO) > 0);
+        BigDecimal total = sales.stream()
+                .map(SalesCategoryStatistics::totalSales)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(total).extracting(BigDecimal::signum).isEqualTo(1);
+    }
+
+    @Test
+    void salesCategoryStatisticsExcludesUnrealizedOrders() {
+        insertProduct(999005L, "Cancelled category revenue probe");
+        insertOrder(999005L, "cancelled");
+        insertOrderItem(999005L, 999005L, 999005L);
+        insertOrder(999006L, "pending");
+        insertOrderItem(999006L, 999006L, 999005L);
+
+        List<SalesCategoryStatistics> sales = statsMapper.salesCategoryStatistics();
+
+        assertThat(sales)
+                .noneMatch(row -> row.totalSales().compareTo(new BigDecimal("99999999.00")) >= 0);
     }
 
     private void insertProduct(Long productId, String name) {

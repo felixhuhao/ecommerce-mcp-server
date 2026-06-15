@@ -6,6 +6,8 @@ public record StatisticsResult(
         InventoryStatistics inventory,
         List<OrderStatusStatistics> ordersByStatus,
         List<ProductCategoryStatistics> productsByCategory,
+        List<SalesCategoryStatistics> salesByCategory,
         List<PurchaseOrderStatusStatistics> purchaseOrdersByStatus,
-        List<TopProductSalesStatistics> topProductsByRevenue) {
+        List<TopProductSalesStatistics> topProductsByRevenue,
+        List<TopCustomerSpendStatistics> topCustomersBySpend) {
 }

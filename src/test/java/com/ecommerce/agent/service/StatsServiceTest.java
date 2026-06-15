@@ -21,9 +21,12 @@ class StatsServiceTest {
         assertThat(result.inventory()).isNotNull();
         assertThat(result.ordersByStatus()).isNotEmpty();
         assertThat(result.productsByCategory()).isNotEmpty();
+        assertThat(result.salesByCategory()).isNotEmpty();
         assertThat(result.purchaseOrdersByStatus()).isNotEmpty();
         assertThat(result.topProductsByRevenue()).isNotEmpty();
         assertThat(result.topProductsByRevenue()).hasSizeLessThanOrEqualTo(5);
+        assertThat(result.topCustomersBySpend()).isNotEmpty();
+        assertThat(result.topCustomersBySpend()).hasSizeLessThanOrEqualTo(5);
     }
 
     @Test
@@ -31,5 +34,6 @@ class StatsServiceTest {
         StatisticsResult result = statsService.getStatistics(500);
 
         assertThat(result.topProductsByRevenue()).hasSizeLessThanOrEqualTo(20);
+        assertThat(result.topCustomersBySpend()).hasSizeLessThanOrEqualTo(20);
     }
 }

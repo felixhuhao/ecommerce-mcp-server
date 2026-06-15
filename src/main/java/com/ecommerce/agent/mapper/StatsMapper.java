@@ -10,6 +10,8 @@ import com.ecommerce.agent.dto.InventoryStatistics;
 import com.ecommerce.agent.dto.OrderStatusStatistics;
 import com.ecommerce.agent.dto.ProductCategoryStatistics;
 import com.ecommerce.agent.dto.PurchaseOrderStatusStatistics;
+import com.ecommerce.agent.dto.SalesCategoryStatistics;
+import com.ecommerce.agent.dto.TopCustomerSpendStatistics;
 import com.ecommerce.agent.dto.TopProductSalesStatistics;
 
 @Mapper
@@ -50,6 +52,20 @@ public interface StatsMapper {
 
     @Select("""
             SELECT
+                p.category AS category,
+                CAST(SUM(oi.quantity) AS SIGNED) AS unitsSold,
+                COALESCE(SUM(oi.subtotal), 0) AS totalSales
+            FROM order_item oi
+            JOIN orders o ON o.order_id = oi.order_id
+            JOIN product p ON p.product_id = oi.product_id
+            WHERE o.status IN ('paid', 'shipped', 'completed')
+            GROUP BY p.category
+            ORDER BY totalSales DESC, category
+            """)
+    List<SalesCategoryStatistics> salesCategoryStatistics();
+
+    @Select("""
+            SELECT
                 status,
                 COUNT(*) AS purchaseOrderCount,
                 COALESCE(SUM(total_cost), 0) AS totalCost
@@ -74,4 +90,19 @@ public interface StatsMapper {
             LIMIT #{limit}
             """)
     List<TopProductSalesStatistics> topProductSalesStatistics(@Param("limit") Integer limit);
+
+    @Select("""
+            SELECT
+                u.user_id AS userId,
+                u.username,
+                CAST(COUNT(o.order_id) AS SIGNED) AS orderCount,
+                COALESCE(SUM(o.total_amount), 0) AS totalSpend
+            FROM orders o
+            JOIN user u ON u.user_id = o.user_id
+            WHERE o.status IN ('paid', 'shipped', 'completed')
+            GROUP BY u.user_id, u.username
+            ORDER BY totalSpend DESC, orderCount DESC, u.user_id
+            LIMIT #{limit}
+            """)
+    List<TopCustomerSpendStatistics> topCustomerSpendStatistics(@Param("limit") Integer limit);
 }

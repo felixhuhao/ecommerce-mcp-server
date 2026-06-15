@@ -16,9 +16,9 @@ public class StatisticsTool {
         this.statsService = statsService;
     }
 
-    @McpTool(name = "get_statistics", description = "Get aggregate ecommerce statistics for analysis.")
+    @McpTool(name = "get_statistics", description = "Get aggregate ecommerce statistics for analysis, including top products and top customers.")
     public StatisticsResult getStatistics(
-            @McpToolParam(required = false, description = "Maximum number of top products to return.") Integer topProductLimit) {
+            @McpToolParam(required = false, description = "Maximum number of top products and top customers to return.") Integer topProductLimit) {
         return statsService.getStatistics(topProductLimit);
     }
 }

@@ -21,5 +21,6 @@ class StatisticsToolTest {
         assertThat(result.inventory().productCount()).isPositive();
         assertThat(result.ordersByStatus()).isNotEmpty();
         assertThat(result.topProductsByRevenue()).hasSizeLessThanOrEqualTo(3);
+        assertThat(result.topCustomersBySpend()).hasSizeLessThanOrEqualTo(3);
     }
 }

@@ -23,8 +23,10 @@ public class StatsService {
                 statsMapper.inventoryStatistics(),
                 statsMapper.orderStatusStatistics(),
                 statsMapper.productCategoryStatistics(),
+                statsMapper.salesCategoryStatistics(),
                 statsMapper.purchaseOrderStatusStatistics(),
-                statsMapper.topProductSalesStatistics(normalizedTopProductLimit));
+                statsMapper.topProductSalesStatistics(normalizedTopProductLimit),
+                statsMapper.topCustomerSpendStatistics(normalizedTopProductLimit));
     }
 
     private int normalizeTopProductLimit(Integer limit) {
