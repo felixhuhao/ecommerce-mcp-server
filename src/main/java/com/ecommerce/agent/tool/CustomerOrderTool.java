@@ -22,15 +22,16 @@ public class CustomerOrderTool {
             name = "order_query",
             description = "Read customer sales orders with line items. Use for a specific "
                     + "customer's order history, order-status checks, or detailed order rows for "
-                    + "analysis. Filter by userId or status when available. Do not use to "
+                    + "analysis. Filter by orderId, userId, or status when available. Do not use to "
                     + "recompute top-level customer spend or category-sales aggregates when "
                     + "aggregate tools can answer.")
     public List<CustomerOrderResult> orderQuery(
+            @McpToolParam(required = false, description = "Customer order id to look up one specific order.") Long orderId,
             @McpToolParam(required = false, description = "Customer user id to return orders for one customer.") Long userId,
             @McpToolParam(required = false, description = "Order status filter, such as pending, "
                     + "paid, shipped, completed, or cancelled.") String status,
             @McpToolParam(required = false, description = "Maximum number of recent orders to return.") Integer limit) {
-        return customerOrderService.queryOrders(userId, status, limit)
+        return customerOrderService.queryOrders(orderId, userId, status, limit)
                 .stream()
                 .map(CustomerOrderResult::from)
                 .toList();

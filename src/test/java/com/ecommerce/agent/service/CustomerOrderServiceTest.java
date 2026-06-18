@@ -27,7 +27,7 @@ class CustomerOrderServiceTest {
 
     @Test
     void queryOrdersReturnsOrdersWithItems() {
-        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, null, 5);
+        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, null, null, 5);
 
         assertThat(orders).isNotEmpty();
         assertThat(orders).hasSizeLessThanOrEqualTo(5);
@@ -37,7 +37,7 @@ class CustomerOrderServiceTest {
 
     @Test
     void queryOrdersFiltersByStatus() {
-        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, "pending", 10);
+        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, null, "pending", 10);
 
         assertThat(orders).isNotEmpty();
         assertThat(orders).allMatch(order -> order.order().getStatus().equals("pending"));
@@ -45,15 +45,29 @@ class CustomerOrderServiceTest {
 
     @Test
     void queryOrdersFiltersByUserId() {
-        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(10L, null, 10);
+        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, 10L, null, 10);
 
         assertThat(orders).isNotEmpty();
         assertThat(orders).allMatch(order -> order.order().getUserId().equals(10L));
     }
 
     @Test
+    void queryOrdersFiltersByOrderId() {
+        Long orderId = customerOrderService.queryOrders(null, null, null, 1)
+                .getFirst()
+                .order()
+                .getOrderId();
+
+        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(orderId, null, null, 10);
+
+        assertThat(orders).hasSize(1);
+        assertThat(orders.getFirst().order().getOrderId()).isEqualTo(orderId);
+        assertThat(orders.getFirst().items()).isNotEmpty();
+    }
+
+    @Test
     void queryOrdersCapsLargeLimit() {
-        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, null, 500);
+        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, null, null, 500);
 
         assertThat(orders).hasSizeLessThanOrEqualTo(50);
     }
@@ -85,7 +99,7 @@ class CustomerOrderServiceTest {
     }
 
     private Long firstOrderIdWithStatus(String status) {
-        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, status, 1);
+        List<CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, null, status, 1);
         assertThat(orders).isNotEmpty();
         return orders.getFirst().order().getOrderId();
     }

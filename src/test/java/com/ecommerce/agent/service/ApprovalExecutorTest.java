@@ -339,7 +339,7 @@ class ApprovalExecutorTest {
     }
 
     private Long firstOrderIdWithStatus(String status) {
-        List<CustomerOrderService.CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, status, 1);
+        List<CustomerOrderService.CustomerOrderWithItems> orders = customerOrderService.queryOrders(null, null, status, 1);
         assertThat(orders).isNotEmpty();
         return orders.getFirst().order().getOrderId();
     }

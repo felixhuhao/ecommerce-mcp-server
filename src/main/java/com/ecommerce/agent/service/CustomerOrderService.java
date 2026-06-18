@@ -31,8 +31,9 @@ public class CustomerOrderService {
         this.orderItemMapper = orderItemMapper;
     }
 
-    public List<CustomerOrderWithItems> queryOrders(Long userId, String status, Integer limit) {
-        List<CustomerOrder> orders = customerOrderMapper.selectList(orderQuery(userId, status, normalizeLimit(limit)));
+    public List<CustomerOrderWithItems> queryOrders(Long orderId, Long userId, String status, Integer limit) {
+        List<CustomerOrder> orders = customerOrderMapper.selectList(
+                orderQuery(orderId, userId, status, normalizeLimit(limit)));
         if (orders.isEmpty()) {
             return List.of();
         }
@@ -85,9 +86,10 @@ public class CustomerOrderService {
         }
     }
 
-    private LambdaQueryWrapper<CustomerOrder> orderQuery(Long userId, String status, int limit) {
+    private LambdaQueryWrapper<CustomerOrder> orderQuery(Long orderId, Long userId, String status, int limit) {
         LambdaQueryWrapper<CustomerOrder> query = new LambdaQueryWrapper<>();
-        query.eq(userId != null, CustomerOrder::getUserId, userId)
+        query.eq(orderId != null, CustomerOrder::getOrderId, orderId)
+                .eq(userId != null, CustomerOrder::getUserId, userId)
                 .eq(status != null && !status.isBlank(), CustomerOrder::getStatus, status == null ? null : status.trim())
                 .orderByDesc(CustomerOrder::getCreatedAt)
                 .orderByDesc(CustomerOrder::getOrderId)
