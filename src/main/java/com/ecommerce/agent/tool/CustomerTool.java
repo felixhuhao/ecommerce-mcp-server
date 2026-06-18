@@ -18,12 +18,18 @@ public class CustomerTool {
         this.customerService = customerService;
     }
 
-    @McpTool(name = "user_query", description = "Query customer accounts by user id, keyword, level, or recent registration.")
+    @McpTool(
+            name = "user_query",
+            description = "Read customer account/profile rows. Use to resolve a customer userId, "
+                    + "inspect profile fields, or clarify labels for a small set of customers. "
+                    + "Do not use as a substitute for aggregate customer-spend summaries.")
     public List<CustomerResult> userQuery(
-            @McpToolParam(required = false, description = "Customer user id.") Long userId,
-            @McpToolParam(required = false, description = "Username, email, or phone keyword.") String keyword,
-            @McpToolParam(required = false, description = "Customer level from 1 to 4.") Integer level,
-            @McpToolParam(required = false, description = "Maximum number of customers to return.") Integer limit) {
+            @McpToolParam(required = false, description = "Customer user id for an exact customer lookup.") Long userId,
+            @McpToolParam(required = false, description = "Username, email, or phone keyword for "
+                    + "customer search.") String keyword,
+            @McpToolParam(required = false, description = "Customer level from 1 to 4, if segment "
+                    + "filtering is needed.") Integer level,
+            @McpToolParam(required = false, description = "Maximum number of customer rows to return.") Integer limit) {
         return customerService.queryCustomers(userId, keyword, level, limit)
                 .stream()
                 .map(CustomerResult::from)

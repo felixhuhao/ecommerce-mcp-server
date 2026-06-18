@@ -18,9 +18,14 @@ public class PurchaseOrderTool {
         this.purchaseOrderService = purchaseOrderService;
     }
 
-    @McpTool(name = "purchase_order_query", description = "Query recent supplier purchase orders")
+    @McpTool(
+            name = "purchase_order_query",
+            description = "Read recent supplier purchase orders and their status. Use for "
+                    + "checking existing POs, receiving context, or avoiding duplicate "
+                    + "procurement proposals. This is read-only and does not create or receive "
+                    + "purchase orders.")
     public List<PurchaseOrderResult> purchaseOrderQuery(
-            @McpToolParam(required = false, description = "Maximum number of purchase orders to return.") Integer limit) {
+            @McpToolParam(required = false, description = "Maximum number of recent purchase-order rows to return.") Integer limit) {
         return purchaseOrderService.findRecentPurchaseOrders(limit)
                 .stream()
                 .map(PurchaseOrderResult::from)

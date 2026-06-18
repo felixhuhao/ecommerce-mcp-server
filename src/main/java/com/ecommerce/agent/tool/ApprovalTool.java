@@ -30,11 +30,19 @@ public class ApprovalTool {
         this.trustedActorContext = trustedActorContext;
     }
 
-    @McpTool(name = "request_approval", description = "Request human approval for a structured write operation.")
+    @McpTool(
+            name = "request_approval",
+            description = "Create a pending human-approval record for a supported structured "
+                    + "write. Use only after read tools have confirmed the facts needed for "
+                    + "operationParams. This tool does not execute the write; approval and "
+                    + "execution happen later through the REST approval flow.")
     public ApprovalResponse requestApproval(
-            @McpToolParam(description = "Write tool name that this approval authorizes.") String toolName,
-            @McpToolParam(description = "Operation type, such as create, update, or receive.") String operationType,
-            @McpToolParam(description = "Structured operation parameters. The Agent must not provide approval text.") Map<String, Object> operationParams) {
+            @McpToolParam(description = "Supported write tool name this approval authorizes, such "
+                    + "as order_update, purchase_order_create, or purchase_order_receive.") String toolName,
+            @McpToolParam(description = "Operation type for the write, such as create, update, or receive.") String operationType,
+            @McpToolParam(description = "Structured operation parameters only. Do not include "
+                    + "approval text, user/session identity, or fields not required by the target "
+                    + "write contract.") Map<String, Object> operationParams) {
         TrustedActor actor = trustedActorContext.requireCurrentActor();
         ApprovalRequest request = new ApprovalRequest(toolName, operationType, operationParams, actor.userId(), actor.sessionId());
         approvalPayloadBuilder.validateSupportedRequest(request);

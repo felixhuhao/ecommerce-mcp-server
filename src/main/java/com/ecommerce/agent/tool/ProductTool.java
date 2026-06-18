@@ -18,20 +18,32 @@ public class ProductTool {
         this.productService = productService;
     }
 
-    @McpTool(name = "product_query", description = "Query active products with an optional SKU, name, or category keyword.")
+    @McpTool(
+            name = "product_query",
+            description = "Read active product catalog rows. Use when the agent needs productId, "
+                    + "SKU, name, category, price, cost, or status for product lookup or analysis. "
+                    + "Filter with keyword when the operator gives a SKU, product name, or category; "
+                    + "omit keyword only for a small catalog sample.")
     public List<ProductResult> productQuery(
-            @McpToolParam(required = false, description = "Product SKU, name, or category keyword.") String keyword,
-            @McpToolParam(required = false, description = "Maximum number of products to return.") Integer limit) {
+            @McpToolParam(required = false, description = "Optional SKU, product name, or category "
+                    + "keyword to match active products.") String keyword,
+            @McpToolParam(required = false, description = "Maximum number of active product rows "
+                    + "to return. Use a small value for lookup; omit for the service default.") Integer limit) {
         return productService.searchActiveProducts(keyword, limit)
                 .stream()
                 .map(ProductResult::from)
                 .toList();
     }
 
-    @McpTool(name = "product_search", description = "Search active products by SKU, product name, or category.")
+    @McpTool(
+            name = "product_search",
+            description = "Resolve a product identifier to active product rows. Use first when the "
+                    + "operator gives a SKU, product name, or category and another tool needs "
+                    + "productId or authoritative product cost. Do not use for inventory quantities "
+                    + "or order history.")
     public List<ProductResult> productSearch(
-            @McpToolParam(description = "Product SKU, name, or category keyword.") String keyword,
-            @McpToolParam(required = false, description = "Maximum number of products to return.") Integer limit) {
+            @McpToolParam(description = "Required SKU, product name, or category keyword to search.") String keyword,
+            @McpToolParam(required = false, description = "Maximum number of matching active products to return.") Integer limit) {
         return productService.searchActiveProducts(keyword, limit)
                 .stream()
                 .map(ProductResult::from)

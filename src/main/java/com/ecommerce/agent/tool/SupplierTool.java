@@ -18,19 +18,27 @@ public class SupplierTool {
         this.supplierService = supplierService;
     }
 
-    @McpTool(name = "supplier_top", description = "List top suppliers ordered by rating and lead time.")
+    @McpTool(
+            name = "supplier_top",
+            description = "Read top suppliers ordered by rating and lead-time quality. Use for "
+                    + "supplier comparison, sourcing options, or procurement context before "
+                    + "proposing a purchase order. Does not create or receive purchase orders.")
     public List<SupplierResult> supplierTop(
-            @McpToolParam(required = false, description = "Maximum number of suppliers to return.") Integer limit) {
+            @McpToolParam(required = false, description = "Maximum number of ranked supplier rows to return.") Integer limit) {
         return supplierService.findTopSuppliers(limit)
                 .stream()
                 .map(SupplierResult::from)
                 .toList();
     }
 
-    @McpTool(name = "supplier_query", description = "Query suppliers by supplier name or contact person.")
+    @McpTool(
+            name = "supplier_query",
+            description = "Read supplier records by supplier name or contact person. Use to "
+                    + "confirm supplierId, name, contact details, rating, and leadTime before a "
+                    + "procurement proposal. Do not use for customer orders or inventory quantities.")
     public List<SupplierResult> supplierQuery(
-            @McpToolParam(required = false, description = "Supplier name or contact person keyword.") String keyword,
-            @McpToolParam(required = false, description = "Maximum number of suppliers to return.") Integer limit) {
+            @McpToolParam(required = false, description = "Supplier name or contact-person keyword to search.") String keyword,
+            @McpToolParam(required = false, description = "Maximum number of matching suppliers to return.") Integer limit) {
         return supplierService.searchSuppliers(keyword, limit)
                 .stream()
                 .map(SupplierResult::from)

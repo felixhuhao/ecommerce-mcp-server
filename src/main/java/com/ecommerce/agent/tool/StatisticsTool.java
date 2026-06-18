@@ -16,9 +16,17 @@ public class StatisticsTool {
         this.statsService = statsService;
     }
 
-    @McpTool(name = "get_statistics", description = "Get aggregate ecommerce statistics for analysis, including top products and top customers.")
+    @McpTool(
+            name = "get_statistics",
+            description = "Read broad backend-computed ecommerce aggregates. Use for miscellaneous "
+                    + "operational summaries such as inventory health, orders by status, products "
+                    + "by category, salesByCategory, purchase orders by status, "
+                    + "topProductsByRevenue, and topCustomersBySpend. Prefer narrower "
+                    + "agent-facing wrapper tools when available for a specific aggregate.")
     public StatisticsResult getStatistics(
-            @McpToolParam(required = false, description = "Maximum number of top products and top customers to return.") Integer topProductLimit) {
+            @McpToolParam(required = false, description = "Maximum number of top products and top "
+                    + "customers to include in the aggregate response. Other aggregate sections "
+                    + "use service defaults.") Integer topProductLimit) {
         return statsService.getStatistics(topProductLimit);
     }
 }
