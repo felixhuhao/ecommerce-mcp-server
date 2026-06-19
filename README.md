@@ -1,6 +1,8 @@
 # E-Commerce MCP Server
 
-Spring Boot MCP server for an e-commerce AI assistant. This service owns the MySQL-backed business data, exposes read/write business capability as MCP tools, and enforces human-in-the-loop approval for risky writes.
+Spring Boot MCP server for the E-Commerce Agent. This service owns the
+MySQL-backed operational business data, exposes read/write business capabilities
+as MCP tools, and enforces human-in-the-loop approval for risky writes.
 
 Detailed design lives in [docs/2026-06-05-ecommerce-mcp-server-spec.md](docs/2026-06-05-ecommerce-mcp-server-spec.md).
 
@@ -12,7 +14,9 @@ Detailed design lives in [docs/2026-06-05-ecommerce-mcp-server-spec.md](docs/202
 - Server-side approval payload generation, hashing, binding, expiry, and one-time consumption
 - Streamable HTTP MCP endpoint at `/mcp`
 
-The Python/Agent project owns orchestration, LangGraph checkpoints, frontend HITL flow, sandbox tools, and visualization MCP servers.
+The Python/Agent project owns specialist routing, session orchestration,
+frontend HITL flow, trace/grounding, proactive monitoring, ECharts artifacts,
+sandbox analysis, and optional warehouse/NL2SQL integration.
 
 ## Tech Stack
 
@@ -47,6 +51,10 @@ Write/approval tools:
 - `order_update`
 
 Write tools require a valid `approval_id`. Approvals are bound to the trusted actor, session, tool name, canonical operation payload, and are one-time use.
+
+Tool descriptions and parameter descriptions are part of the agent contract.
+When a tool changes, update its `@McpTool` / `@McpToolParam` descriptions and
+the scaffold tests that assert the exposed schema remains descriptive.
 
 ## Prerequisites
 
@@ -166,6 +174,30 @@ APP_SERVICE_TOKEN=dev-service-token
 
 The Docker app runtime does not run `schema.sql` or `data.sql`; database setup remains manual or test-only.
 
+When running next to the agent's local MySQL container, use the same Docker
+network as MySQL. This example assumes the agent compose stack created a
+`mysql-db_default` network and a `dev-mysql` hostname; adjust both names for your
+local layout:
+
+```bash
+docker build -t ecommerce-mcp-server:local .
+docker rm -f ecommerce-mcp-server || true
+docker run -d \
+  --name ecommerce-mcp-server \
+  --network mysql-db_default \
+  -p 8080:8080 \
+  -e SPRING_DATASOURCE_URL='jdbc:mysql://dev-mysql:3306/ecommerce_db?useUnicode=true&characterEncoding=utf8&serverTimezone=<server-timezone>' \
+  -e SPRING_DATASOURCE_USERNAME=<mysql-user> \
+  -e SPRING_DATASOURCE_PASSWORD=<mysql-password> \
+  -e APP_SERVICE_TOKEN=<service-token> \
+  ecommerce-mcp-server:local
+```
+
+Use values that match your local MySQL credentials and the agent repo's
+`SPRING_MCP_SERVICE_TOKEN`. The `serverTimezone` value affects stale-order
+windowing because the server filters naive MySQL timestamps using its configured
+local time.
+
 ## Approval Flow
 
 1. Agent calls `request_approval` with a write tool name and structured operation params.
@@ -188,15 +220,29 @@ Approval records default to a 15-minute TTL. Expired open approvals are lazily m
 `product_query` and `product_search` match active products by SKU, product name, or category.
 Inventory reads return SKU and product name alongside stock quantities.
 
+`order_query` supports direct `orderId` lookup, status filtering, and stale-order
+monitoring via `staleOlderThanHours`. Stale results are ordered oldest first:
+
+- `status=pending` compares against `createdAt`
+- `status=paid` compares against `paidAt`
+
 `get_statistics` returns aggregation-first data for:
 
 - Inventory health
 - Orders by status
 - Products by category
+- Sales by category
+- Week-over-week sales drops
 - Purchase orders by status
 - Top products by revenue
+- Top customers by spend
 
-Top products use realized sales only: `paid`, `shipped`, and `completed` orders. `pending` and `cancelled` orders are excluded.
+Sales aggregates use realized sales only: `paid`, `shipped`, and `completed`
+orders. `pending` and `cancelled` orders are excluded.
+
+The `salesDropWow` aggregate compares the trailing seven-day window anchored on
+the latest counted order date against the previous seven-day window and returns
+category-level drop ratios as `dropPct`.
 
 ## Project Layout
 
@@ -224,6 +270,9 @@ git status --short
 
 ## Current Scope
 
-The Java MCP server scope is implemented: read tools, write tools, HITL enforcement, REST approval transitions, Testcontainers-backed tests, and `get_statistics`.
+The Java MCP server scope is implemented: read tools, approval-gated write
+tools, REST approval transitions, actor/session binding, stale-order query
+support, aggregation statistics, seed data, and Testcontainers-backed tests.
 
-Cross-project end-to-end verification from the Python `MultiServerMCPClient` caller is intentionally left to the parent Agent project.
+Cross-project end-to-end verification from the Python `MultiServerMCPClient`
+caller lives in the parent Agent project.
