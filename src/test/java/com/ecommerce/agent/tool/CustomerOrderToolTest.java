@@ -18,7 +18,7 @@ class CustomerOrderToolTest {
 
     @Test
     void orderQueryReturnsOrdersWithItems() {
-        List<CustomerOrderResult> orders = customerOrderTool.orderQuery(null, null, null, 5);
+        List<CustomerOrderResult> orders = customerOrderTool.orderQuery(null, null, null, 5, null);
 
         assertThat(orders).isNotEmpty();
         assertThat(orders).hasSizeLessThanOrEqualTo(5);
@@ -33,7 +33,7 @@ class CustomerOrderToolTest {
 
     @Test
     void orderQueryFiltersByStatus() {
-        List<CustomerOrderResult> orders = customerOrderTool.orderQuery(null, null, "pending", 10);
+        List<CustomerOrderResult> orders = customerOrderTool.orderQuery(null, null, "pending", 10, null);
 
         assertThat(orders).isNotEmpty();
         assertThat(orders).allMatch(order -> order.status().equals("pending"));
@@ -41,7 +41,7 @@ class CustomerOrderToolTest {
 
     @Test
     void orderQueryFiltersByUserId() {
-        List<CustomerOrderResult> orders = customerOrderTool.orderQuery(null, 10L, null, 10);
+        List<CustomerOrderResult> orders = customerOrderTool.orderQuery(null, 10L, null, 10, null);
 
         assertThat(orders).isNotEmpty();
         assertThat(orders).allMatch(order -> order.userId().equals(10L));
@@ -49,13 +49,20 @@ class CustomerOrderToolTest {
 
     @Test
     void orderQueryFiltersByOrderId() {
-        Long orderId = customerOrderTool.orderQuery(null, null, null, 1)
+        Long orderId = customerOrderTool.orderQuery(null, null, null, 1, null)
                 .getFirst()
                 .orderId();
 
-        List<CustomerOrderResult> orders = customerOrderTool.orderQuery(orderId, null, null, 10);
+        List<CustomerOrderResult> orders = customerOrderTool.orderQuery(orderId, null, null, 10, null);
 
         assertThat(orders).hasSize(1);
         assertThat(orders.getFirst().orderId()).isEqualTo(orderId);
+    }
+
+    @Test
+    void orderQueryAcceptsStalePendingFilter() {
+        List<CustomerOrderResult> orders = customerOrderTool.orderQuery(null, null, "pending", 10, 1);
+
+        assertThat(orders).allMatch(order -> order.status().equals("pending"));
     }
 }

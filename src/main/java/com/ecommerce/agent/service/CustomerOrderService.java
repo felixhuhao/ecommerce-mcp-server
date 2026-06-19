@@ -1,5 +1,6 @@
 package com.ecommerce.agent.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -32,8 +33,17 @@ public class CustomerOrderService {
     }
 
     public List<CustomerOrderWithItems> queryOrders(Long orderId, Long userId, String status, Integer limit) {
+        return queryOrders(orderId, userId, status, limit, null);
+    }
+
+    public List<CustomerOrderWithItems> queryOrders(
+            Long orderId,
+            Long userId,
+            String status,
+            Integer limit,
+            Integer staleOlderThanHours) {
         List<CustomerOrder> orders = customerOrderMapper.selectList(
-                orderQuery(orderId, userId, status, normalizeLimit(limit)));
+                orderQuery(orderId, userId, status, normalizeLimit(limit), normalizeStaleHours(staleOlderThanHours)));
         if (orders.isEmpty()) {
             return List.of();
         }
@@ -86,15 +96,50 @@ public class CustomerOrderService {
         }
     }
 
-    private LambdaQueryWrapper<CustomerOrder> orderQuery(Long orderId, Long userId, String status, int limit) {
+    private LambdaQueryWrapper<CustomerOrder> orderQuery(
+            Long orderId,
+            Long userId,
+            String status,
+            int limit,
+            Integer staleOlderThanHours) {
+        String normalizedStatus = normalizeStatus(status);
         LambdaQueryWrapper<CustomerOrder> query = new LambdaQueryWrapper<>();
         query.eq(orderId != null, CustomerOrder::getOrderId, orderId)
                 .eq(userId != null, CustomerOrder::getUserId, userId)
-                .eq(status != null && !status.isBlank(), CustomerOrder::getStatus, status == null ? null : status.trim())
-                .orderByDesc(CustomerOrder::getCreatedAt)
-                .orderByDesc(CustomerOrder::getOrderId)
-                .last("LIMIT " + limit);
+                .eq(normalizedStatus != null && !normalizedStatus.isBlank(), CustomerOrder::getStatus, normalizedStatus);
+
+        boolean staleFilter = applyStaleFilter(query, normalizedStatus, staleOlderThanHours);
+        if (!staleFilter) {
+            query.orderByDesc(CustomerOrder::getCreatedAt)
+                    .orderByDesc(CustomerOrder::getOrderId);
+        }
+        query.last("LIMIT " + limit);
         return query;
+    }
+
+    private boolean applyStaleFilter(
+            LambdaQueryWrapper<CustomerOrder> query,
+            String normalizedStatus,
+            Integer staleOlderThanHours) {
+        if (staleOlderThanHours == null || staleOlderThanHours <= 0 || normalizedStatus == null) {
+            return false;
+        }
+
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(staleOlderThanHours);
+        if ("pending".equals(normalizedStatus)) {
+            query.le(CustomerOrder::getCreatedAt, cutoff)
+                    .orderByAsc(CustomerOrder::getCreatedAt)
+                    .orderByAsc(CustomerOrder::getOrderId);
+            return true;
+        }
+        if ("paid".equals(normalizedStatus)) {
+            query.isNotNull(CustomerOrder::getPaidAt)
+                    .le(CustomerOrder::getPaidAt, cutoff)
+                    .orderByAsc(CustomerOrder::getPaidAt)
+                    .orderByAsc(CustomerOrder::getOrderId);
+            return true;
+        }
+        return false;
     }
 
     private LambdaQueryWrapper<OrderItem> orderItemQuery(List<Long> orderIds) {
@@ -111,6 +156,13 @@ public class CustomerOrderService {
         }
 
         return Math.min(limit, MAX_LIMIT);
+    }
+
+    private Integer normalizeStaleHours(Integer staleOlderThanHours) {
+        if (staleOlderThanHours == null || staleOlderThanHours <= 0) {
+            return null;
+        }
+        return staleOlderThanHours;
     }
 
     private void validateUpdateRequest(OrderUpdateRequest request) {
