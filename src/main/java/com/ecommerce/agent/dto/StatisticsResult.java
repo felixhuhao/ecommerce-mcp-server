@@ -7,6 +7,7 @@ public record StatisticsResult(
         List<OrderStatusStatistics> ordersByStatus,
         List<ProductCategoryStatistics> productsByCategory,
         List<SalesCategoryStatistics> salesByCategory,
+        List<SalesDropWowStatistics> salesDropWow,
         List<PurchaseOrderStatusStatistics> purchaseOrdersByStatus,
         List<TopProductSalesStatistics> topProductsByRevenue,
         List<TopCustomerSpendStatistics> topCustomersBySpend) {

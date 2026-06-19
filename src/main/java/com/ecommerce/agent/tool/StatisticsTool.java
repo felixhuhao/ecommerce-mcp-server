@@ -20,7 +20,7 @@ public class StatisticsTool {
             name = "get_statistics",
             description = "Read broad backend-computed ecommerce aggregates. Use for miscellaneous "
                     + "operational summaries such as inventory health, orders by status, products "
-                    + "by category, salesByCategory, purchase orders by status, "
+                    + "by category, salesByCategory, salesDropWow, purchase orders by status, "
                     + "topProductsByRevenue, and topCustomersBySpend. Prefer narrower "
                     + "agent-facing wrapper tools when available for a specific aggregate.")
     public StatisticsResult getStatistics(

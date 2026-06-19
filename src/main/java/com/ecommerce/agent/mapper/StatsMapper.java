@@ -11,6 +11,7 @@ import com.ecommerce.agent.dto.OrderStatusStatistics;
 import com.ecommerce.agent.dto.ProductCategoryStatistics;
 import com.ecommerce.agent.dto.PurchaseOrderStatusStatistics;
 import com.ecommerce.agent.dto.SalesCategoryStatistics;
+import com.ecommerce.agent.dto.SalesDropWowStatistics;
 import com.ecommerce.agent.dto.TopCustomerSpendStatistics;
 import com.ecommerce.agent.dto.TopProductSalesStatistics;
 
@@ -63,6 +64,66 @@ public interface StatsMapper {
             ORDER BY totalSales DESC, category
             """)
     List<SalesCategoryStatistics> salesCategoryStatistics();
+
+    @Select("""
+            WITH latest AS (
+                SELECT DATE(MAX(created_at)) AS latest_date
+                FROM orders
+                WHERE status IN ('paid', 'shipped', 'completed')
+            ),
+            periods AS (
+                SELECT
+                    latest_date,
+                    DATE_SUB(latest_date, INTERVAL 6 DAY) AS current_start,
+                    DATE_SUB(latest_date, INTERVAL 7 DAY) AS previous_end,
+                    DATE_SUB(latest_date, INTERVAL 13 DAY) AS previous_start
+                FROM latest
+                WHERE latest_date IS NOT NULL
+            ),
+            sales AS (
+                SELECT
+                    p.category,
+                    SUM(CASE
+                        WHEN DATE(o.created_at) BETWEEN periods.current_start AND periods.latest_date
+                        THEN oi.subtotal ELSE 0 END) AS current_sales,
+                    SUM(CASE
+                        WHEN DATE(o.created_at) BETWEEN periods.previous_start AND periods.previous_end
+                        THEN oi.subtotal ELSE 0 END) AS previous_sales,
+                    periods.current_start,
+                    periods.latest_date,
+                    periods.previous_start,
+                    periods.previous_end
+                FROM order_item oi
+                JOIN orders o ON o.order_id = oi.order_id
+                JOIN product p ON p.product_id = oi.product_id
+                JOIN periods
+                WHERE o.status IN ('paid', 'shipped', 'completed')
+                    AND DATE(o.created_at) BETWEEN periods.previous_start AND periods.latest_date
+                GROUP BY
+                    p.category,
+                    periods.current_start,
+                    periods.latest_date,
+                    periods.previous_start,
+                    periods.previous_end
+            )
+            SELECT
+                category,
+                COALESCE(current_sales, 0) AS currentSales,
+                COALESCE(previous_sales, 0) AS previousSales,
+                CASE
+                    WHEN previous_sales > 0 AND current_sales < previous_sales
+                    THEN ROUND((previous_sales - current_sales) / previous_sales, 4)
+                    ELSE 0
+                END AS dropPct,
+                current_start AS currentPeriodStart,
+                latest_date AS currentPeriodEnd,
+                previous_start AS previousPeriodStart,
+                previous_end AS previousPeriodEnd
+            FROM sales
+            WHERE previous_sales > 0 AND current_sales < previous_sales
+            ORDER BY dropPct DESC, previousSales DESC, category
+            """)
+    List<SalesDropWowStatistics> salesDropWowStatistics();
 
     @Select("""
             SELECT

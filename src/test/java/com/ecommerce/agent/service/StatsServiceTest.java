@@ -22,6 +22,7 @@ class StatsServiceTest {
         assertThat(result.ordersByStatus()).isNotEmpty();
         assertThat(result.productsByCategory()).isNotEmpty();
         assertThat(result.salesByCategory()).isNotEmpty();
+        assertThat(result.salesDropWow()).isNotEmpty();
         assertThat(result.purchaseOrdersByStatus()).isNotEmpty();
         assertThat(result.topProductsByRevenue()).isNotEmpty();
         assertThat(result.topProductsByRevenue()).hasSizeLessThanOrEqualTo(5);
@@ -35,5 +36,18 @@ class StatsServiceTest {
 
         assertThat(result.topProductsByRevenue()).hasSizeLessThanOrEqualTo(20);
         assertThat(result.topCustomersBySpend()).hasSizeLessThanOrEqualTo(20);
+    }
+
+    @Test
+    void getStatisticsIncludesStableSalesDropWowAggregate() {
+        StatisticsResult result = statsService.getStatistics(5);
+
+        assertThat(result.salesDropWow())
+                .anySatisfy(drop -> {
+                    assertThat(drop.category()).isEqualTo("home");
+                    assertThat(drop.currentSales()).isEqualByComparingTo("129.00");
+                    assertThat(drop.previousSales()).isEqualByComparingTo("2580.00");
+                    assertThat(drop.dropPct()).isEqualByComparingTo("0.9500");
+                });
     }
 }

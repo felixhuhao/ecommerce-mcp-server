@@ -24,6 +24,7 @@ public class StatsService {
                 statsMapper.orderStatusStatistics(),
                 statsMapper.productCategoryStatistics(),
                 statsMapper.salesCategoryStatistics(),
+                statsMapper.salesDropWowStatistics(),
                 statsMapper.purchaseOrderStatusStatistics(),
                 statsMapper.topProductSalesStatistics(normalizedTopProductLimit),
                 statsMapper.topCustomerSpendStatistics(normalizedTopProductLimit));
