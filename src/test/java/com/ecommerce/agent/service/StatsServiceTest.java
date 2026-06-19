@@ -42,6 +42,7 @@ class StatsServiceTest {
     void getStatisticsIncludesStableSalesDropWowAggregate() {
         StatisticsResult result = statsService.getStatistics(5);
 
+        // Seed orders 1020/1021 anchor the latest counted order date at 2026-06-15.
         assertThat(result.salesDropWow())
                 .anySatisfy(drop -> {
                     assertThat(drop.category()).isEqualTo("home");
